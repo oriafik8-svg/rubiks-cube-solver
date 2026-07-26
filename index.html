@@ -2416,16 +2416,22 @@ function classifyPalette(samples) {
   }
   return { palette: palette.map((p) => p.rgb), assignments };
 }
-const FACE_SEQUENCE = ["U", "R", "F", "D", "L", "B"];
+const FACE_SEQUENCE = ["F", "R", "B", "L", "U", "D"];
 const FACE_LABEL_HE = { U: "\u05E2\u05DC\u05D9\u05D5\u05E0\u05D4", R: "\u05D9\u05DE\u05E0\u05D9\u05EA", F: "\u05E7\u05D3\u05DE\u05D9\u05EA", D: "\u05EA\u05D7\u05EA\u05D5\u05E0\u05D4", L: "\u05E9\u05DE\u05D0\u05DC\u05D9\u05EA", B: "\u05D0\u05D7\u05D5\u05E8\u05D9\u05EA" };
 const FACE_GUIDANCE_HE = {
-  U: '\u05D4\u05D7\u05D6\u05E7 \u05D0\u05EA \u05D4\u05E7\u05D5\u05D1\u05D9\u05D9\u05D4 \u05DB\u05DA \u05E9\u05D4\u05E4\u05D0\u05D4 \u05D4\u05DC\u05D1\u05E0\u05D4 (\u05D0\u05D5 \u05DB\u05DC \u05E4\u05D0\u05D4 \u05E9\u05EA\u05D1\u05D7\u05E8 \u05DB"\u05E2\u05DC\u05D9\u05D5\u05E0\u05D4") \u05E4\u05D5\u05E0\u05D4 \u05D0\u05DC\u05D9\u05DA \u05DE\u05DC\u05DE\u05E2\u05DC\u05D4, \u05DC\u05DB\u05D9\u05D5\u05D5\u05DF \u05D4\u05DE\u05E6\u05DC\u05DE\u05D4.',
-  R: "\u05E1\u05D5\u05D1\u05D1 \u05D0\u05EA \u05D4\u05E7\u05D5\u05D1\u05D9\u05D9\u05D4 \u05DB\u05DA \u05E9\u05D4\u05E4\u05D0\u05D4 \u05E9\u05D4\u05D9\u05D9\u05EA\u05D4 \u05DE\u05D9\u05DE\u05D9\u05DF... \u05D4\u05E6\u05D2 \u05DB\u05E2\u05EA \u05D0\u05EA \u05D4\u05E4\u05D0\u05D4 \u05D4\u05D9\u05DE\u05E0\u05D9\u05EA \u05E9\u05DC \u05D4\u05E7\u05D5\u05D1\u05D9\u05D9\u05D4 \u05DE\u05D5\u05DC \u05D4\u05DE\u05E6\u05DC\u05DE\u05D4.",
-  F: "\u05E1\u05D5\u05D1\u05D1 \u05D0\u05EA \u05D4\u05E7\u05D5\u05D1\u05D9\u05D9\u05D4 \u05DB\u05D3\u05D9 \u05DC\u05D4\u05E6\u05D9\u05D2 \u05D0\u05EA \u05D4\u05E4\u05D0\u05D4 \u05D4\u05E7\u05D3\u05DE\u05D9\u05EA (\u05D4\u05E4\u05D5\u05E0\u05D4 \u05D0\u05DC\u05D9\u05DA \u05D1\u05D3\u05E8\u05DA \u05DB\u05DC\u05DC) \u05DE\u05D5\u05DC \u05D4\u05DE\u05E6\u05DC\u05DE\u05D4.",
-  D: "\u05D4\u05E4\u05D5\u05DA \u05D0\u05EA \u05D4\u05E7\u05D5\u05D1\u05D9\u05D9\u05D4 180\xB0 \u05DB\u05DA \u05E9\u05D4\u05E4\u05D0\u05D4 \u05D4\u05EA\u05D7\u05EA\u05D5\u05E0\u05D4 \u05EA\u05E4\u05E0\u05D4 \u05DB\u05DC\u05E4\u05D9 \u05DE\u05E2\u05DC\u05D4, \u05DE\u05D5\u05DC \u05D4\u05DE\u05E6\u05DC\u05DE\u05D4.",
-  L: "\u05E1\u05D5\u05D1\u05D1 \u05D0\u05EA \u05D4\u05E7\u05D5\u05D1\u05D9\u05D9\u05D4 \u05DB\u05D3\u05D9 \u05DC\u05D4\u05E6\u05D9\u05D2 \u05D0\u05EA \u05D4\u05E4\u05D0\u05D4 \u05D4\u05E9\u05DE\u05D0\u05DC\u05D9\u05EA \u05DE\u05D5\u05DC \u05D4\u05DE\u05E6\u05DC\u05DE\u05D4.",
-  B: "\u05E1\u05D5\u05D1\u05D1 \u05D0\u05EA \u05D4\u05E7\u05D5\u05D1\u05D9\u05D9\u05D4 \u05DB\u05D3\u05D9 \u05DC\u05D4\u05E6\u05D9\u05D2 \u05D0\u05EA \u05D4\u05E4\u05D0\u05D4 \u05D4\u05D0\u05D7\u05D5\u05E8\u05D9\u05EA \u05DE\u05D5\u05DC \u05D4\u05DE\u05E6\u05DC\u05DE\u05D4."
+  F: "\u05D4\u05EA\u05D7\u05DC \u05DB\u05DA \u05E9\u05D4\u05E4\u05D0\u05D4 \u05D4\u05E7\u05D3\u05DE\u05D9\u05EA \u05E9\u05DC \u05D4\u05E7\u05D5\u05D1\u05D9\u05D9\u05D4 (\u05DB\u05DC \u05E4\u05D0\u05D4 \u05E9\u05EA\u05D1\u05D7\u05E8) \u05E4\u05D5\u05E0\u05D4 \u05D9\u05E9\u05E8 \u05D0\u05DC\u05D9\u05DA, \u05DE\u05D5\u05DC \u05D4\u05DE\u05E6\u05DC\u05DE\u05D4, \u05E2\u05DD \u05D4\u05D7\u05DC\u05E7 \u05D4\u05E2\u05DC\u05D9\u05D5\u05DF \u05E9\u05DC \u05D4\u05E7\u05D5\u05D1\u05D9\u05D9\u05D4 \u05DB\u05DC\u05E4\u05D9 \u05DE\u05E2\u05DC\u05D4 - \u05D1\u05D3\u05D9\u05D5\u05E7 \u05DB\u05DE\u05D5 \u05E7\u05D5\u05D1\u05D9\u05D9\u05EA \u05D4-3D \u05DC\u05DE\u05E2\u05DC\u05D4.",
+  R: "\u05E1\u05D5\u05D1\u05D1 \u05D0\u05EA \u05D4\u05E7\u05D5\u05D1\u05D9\u05D9\u05D4 \u05E9\u05DE\u05D0\u05DC\u05D4 (\u05E1\u05D1\u05D9\u05D1 \u05D4\u05E6\u05D9\u05E8 \u05D4\u05D0\u05E0\u05DB\u05D9) \u05E8\u05D1\u05E2 \u05E1\u05D9\u05D1\u05D5\u05D1, \u05DB\u05DA \u05E9\u05D4\u05E4\u05D0\u05D4 \u05E9\u05D4\u05D9\u05D9\u05EA\u05D4 \u05DE\u05D9\u05DE\u05D9\u05DF \u05EA\u05E4\u05E0\u05D4 \u05D0\u05DC\u05D9\u05DA \u05E2\u05DB\u05E9\u05D9\u05D5 - \u05E2\u05E7\u05D5\u05D1 \u05D0\u05D7\u05E8\u05D9 \u05E7\u05D5\u05D1\u05D9\u05D9\u05EA \u05D4-3D.",
+  B: "\u05D4\u05DE\u05E9\u05DA \u05DC\u05E1\u05D5\u05D1\u05D1 \u05D0\u05EA \u05D4\u05E7\u05D5\u05D1\u05D9\u05D9\u05D4 \u05D1\u05D0\u05D5\u05EA\u05D5 \u05DB\u05D9\u05D5\u05D5\u05DF \u05E2\u05D5\u05D3 \u05E8\u05D1\u05E2 \u05E1\u05D9\u05D1\u05D5\u05D1, \u05DB\u05DA \u05E9\u05D4\u05E4\u05D0\u05D4 \u05D4\u05D0\u05D7\u05D5\u05E8\u05D9\u05EA \u05EA\u05E4\u05E0\u05D4 \u05D0\u05DC\u05D9\u05DA.",
+  L: "\u05D4\u05DE\u05E9\u05DA \u05DC\u05E1\u05D5\u05D1\u05D1 \u05E2\u05D5\u05D3 \u05E8\u05D1\u05E2 \u05E1\u05D9\u05D1\u05D5\u05D1 \u05D1\u05D0\u05D5\u05EA\u05D5 \u05DB\u05D9\u05D5\u05D5\u05DF, \u05DB\u05DA \u05E9\u05D4\u05E4\u05D0\u05D4 \u05D4\u05E9\u05DE\u05D0\u05DC\u05D9\u05EA \u05EA\u05E4\u05E0\u05D4 \u05D0\u05DC\u05D9\u05DA.",
+  U: "\u05E2\u05DB\u05E9\u05D9\u05D5 \u05D4\u05D8\u05D4 \u05D0\u05EA \u05D4\u05E7\u05D5\u05D1\u05D9\u05D9\u05D4 \u05E7\u05D3\u05D9\u05DE\u05D4 (\u05E1\u05D5\u05D1\u05D1 \u05E1\u05D1\u05D9\u05D1 \u05E6\u05D9\u05E8 \u05D0\u05D5\u05E4\u05E7\u05D9) \u05DB\u05DA \u05E9\u05D4\u05E4\u05D0\u05D4 \u05D4\u05E2\u05DC\u05D9\u05D5\u05E0\u05D4 \u05EA\u05E4\u05E0\u05D4 \u05D0\u05DC\u05D9\u05DA, \u05DE\u05D5\u05DC \u05D4\u05DE\u05E6\u05DC\u05DE\u05D4.",
+  D: "\u05D4\u05D8\u05D4 \u05D0\u05EA \u05D4\u05E7\u05D5\u05D1\u05D9\u05D9\u05D4 \u05E2\u05D5\u05D3, \u05D0\u05D5 \u05D4\u05E4\u05D5\u05DA \u05D0\u05D5\u05EA\u05D4, \u05DB\u05DA \u05E9\u05D4\u05E4\u05D0\u05D4 \u05D4\u05EA\u05D7\u05EA\u05D5\u05E0\u05D4 \u05EA\u05E4\u05E0\u05D4 \u05D0\u05DC\u05D9\u05DA, \u05DE\u05D5\u05DC \u05D4\u05DE\u05E6\u05DC\u05DE\u05D4."
 };
+const FACE_NORMAL = { U: [0, 1, 0], D: [0, -1, 0], F: [0, 0, 1], B: [0, 0, -1], R: [1, 0, 0], L: [-1, 0, 0] };
+function faceViewMatrix(face) {
+  const { r, u } = GRID_DEF[face];
+  const n = FACE_NORMAL[face];
+  return [r.slice(), u.slice(), n.slice()];
+}
 const COLOR_LETTERS = ["A", "B", "C", "D", "E", "F"];
 function PermissionScreen({ onGranted }) {
   const [state, setState] = useState("idle");
@@ -2448,11 +2454,15 @@ function PermissionScreen({ onGranted }) {
   }
   return /* @__PURE__ */ React.createElement("div", { className: "screen intro-screen" }, /* @__PURE__ */ React.createElement("div", { className: "intro-icon" }, /* @__PURE__ */ React.createElement(Camera, { size: 38 })), /* @__PURE__ */ React.createElement("h1", null, "\u05D2\u05D9\u05E9\u05D4 \u05DC\u05DE\u05E6\u05DC\u05DE\u05D4"), /* @__PURE__ */ React.createElement("p", { className: "intro-sub" }, "\u05DB\u05D3\u05D9 \u05DC\u05E1\u05E8\u05D5\u05E7 \u05D0\u05EA \u05E4\u05D0\u05D5\u05EA \u05D4\u05E7\u05D5\u05D1\u05D9\u05D9\u05D4, \u05D4\u05D0\u05E4\u05DC\u05D9\u05E7\u05E6\u05D9\u05D4 \u05E6\u05E8\u05D9\u05DB\u05D4 \u05D2\u05D9\u05E9\u05D4 \u05DC\u05DE\u05E6\u05DC\u05DE\u05D4. \u05D1\u05DC\u05D7\u05D9\u05E6\u05D4 \u05E2\u05DC \u05D4\u05DB\u05E4\u05EA\u05D5\u05E8 \u05EA\u05D5\u05E4\u05D9\u05E2 \u05D1\u05E7\u05E9\u05EA \u05D0\u05D9\u05E9\u05D5\u05E8 \u05E9\u05DC \u05D4\u05D3\u05E4\u05D3\u05E4\u05DF - \u05D9\u05E9 \u05DC\u05D0\u05E9\u05E8 \u05D0\u05D5\u05EA\u05D4 \u05DB\u05D3\u05D9 \u05DC\u05D4\u05DE\u05E9\u05D9\u05DA."), state === "denied" && /* @__PURE__ */ React.createElement("div", { className: "error-item", style: { marginBottom: 16, textAlign: "right" } }, /* @__PURE__ */ React.createElement("span", { className: "error-dot" }), /* @__PURE__ */ React.createElement("p", null, "\u05D4\u05D2\u05D9\u05E9\u05D4 \u05DC\u05DE\u05E6\u05DC\u05DE\u05D4 \u05E0\u05DB\u05E9\u05DC\u05D4: ", errMsg, ".", errMsg && errMsg.toLowerCase().includes("denied") ? " \u05D9\u05D9\u05EA\u05DB\u05DF \u05E9\u05DB\u05D1\u05E8 \u05D7\u05E1\u05DE\u05EA \u05D2\u05D9\u05E9\u05D4 \u05D1\u05E2\u05D1\u05E8 - \u05DC\u05D7\u05E5 \u05E2\u05DC \u05E1\u05DE\u05DC \u05D4\u05DE\u05E0\u05E2\u05D5\u05DC/\u05D4\u05DE\u05D9\u05D3\u05E2 \u05DC\u05D9\u05D3 \u05DB\u05EA\u05D5\u05D1\u05EA \u05D4\u05D0\u05EA\u05E8 \u05D1\u05D3\u05E4\u05D3\u05E4\u05DF, \u05E4\u05EA\u05D7 \u05D0\u05EA \u05D4\u05D2\u05D3\u05E8\u05D5\u05EA \u05D4\u05D0\u05EA\u05E8, \u05D0\u05E4\u05E9\u05E8 \u05D2\u05D9\u05E9\u05D4 \u05DC\u05DE\u05E6\u05DC\u05DE\u05D4 \u05E9\u05DD, \u05D5\u05E8\u05E2\u05E0\u05DF \u05D0\u05EA \u05D4\u05D3\u05E3 (\u05D4\u05D3\u05E4\u05D3\u05E4\u05DF \u05DC\u05D0 \u05D9\u05D1\u05E7\u05E9 \u05E9\u05D5\u05D1 \u05D0\u05D9\u05E9\u05D5\u05E8 \u05D0\u05D5\u05D8\u05D5\u05DE\u05D8\u05D9\u05EA \u05D0\u05D7\u05E8\u05D9 \u05E9\u05E0\u05D7\u05E1\u05DD \u05E4\u05E2\u05DD \u05D0\u05D7\u05EA)." : " \u05D1\u05D3\u05D5\u05E7 \u05D1\u05D4\u05D2\u05D3\u05E8\u05D5\u05EA \u05D4\u05D3\u05E4\u05D3\u05E4\u05DF \u05E9\u05D4\u05D0\u05EA\u05E8 \u05DE\u05D5\u05E8\u05E9\u05D4 \u05DC\u05D2\u05E9\u05EA \u05DC\u05DE\u05E6\u05DC\u05DE\u05D4, \u05D5\u05E0\u05E1\u05D4 \u05E9\u05D5\u05D1.")), /* @__PURE__ */ React.createElement("button", { className: "primary-btn full", onClick: requestCamera, disabled: state === "requesting" }, /* @__PURE__ */ React.createElement(Camera, { size: 18 }), " ", state === "requesting" ? "\u05DE\u05DE\u05EA\u05D9\u05DF \u05DC\u05D0\u05D9\u05E9\u05D5\u05E8\u2026" : "\u05D0\u05E4\u05E9\u05E8 \u05D2\u05D9\u05E9\u05D4 \u05DC\u05DE\u05E6\u05DC\u05DE\u05D4"));
 }
-function ScanScreen({ faceIdx, stream, onCapture, onBack }) {
+function ScanScreen({ faceIdx, stream, rawCaptures, onCapture, onBack }) {
   const face = FACE_SEQUENCE[faceIdx];
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
   const [ready, setReady] = useState(false);
+  const capturedColors = {};
+  FACE_SEQUENCE.forEach((f) => {
+    if (rawCaptures[f]) capturedColors[f] = rawCaptures[f].map(rgbToCss);
+  });
   useEffect(() => {
     setReady(false);
     const video = videoRef.current;
@@ -2488,7 +2498,7 @@ function ScanScreen({ faceIdx, stream, onCapture, onBack }) {
     }
     onCapture(face, rgbs);
   };
-  return /* @__PURE__ */ React.createElement("div", { className: "screen scan-screen" }, /* @__PURE__ */ React.createElement("div", { className: "scan-header" }, /* @__PURE__ */ React.createElement("button", { className: "icon-btn", onClick: onBack, "aria-label": "\u05D7\u05D6\u05E8\u05D4" }, /* @__PURE__ */ React.createElement(ChevronRight, { size: 22 })), /* @__PURE__ */ React.createElement("div", { className: "scan-progress" }, FACE_SEQUENCE.map((f, i) => /* @__PURE__ */ React.createElement("div", { key: f, className: `dot ${i === faceIdx ? "dot-active" : ""} ${i < faceIdx ? "dot-done" : ""}` }))), /* @__PURE__ */ React.createElement("div", { style: { width: 38 } })), /* @__PURE__ */ React.createElement("h2", { className: "scan-title" }, "\u05E1\u05E8\u05D5\u05E7 \u05E4\u05D0\u05D4 ", faceIdx + 1, " \u05DE\u05EA\u05D5\u05DA 6: ", /* @__PURE__ */ React.createElement("span", { className: "accent" }, FACE_LABEL_HE[face])), /* @__PURE__ */ React.createElement("p", { className: "scan-guidance" }, FACE_GUIDANCE_HE[face]), /* @__PURE__ */ React.createElement("div", { className: "camera-wrap" }, /* @__PURE__ */ React.createElement("video", { ref: videoRef, className: "camera-video", playsInline: true, muted: true }), /* @__PURE__ */ React.createElement("div", { className: "grid-overlay" }, Array.from({ length: 9 }).map((_, i) => /* @__PURE__ */ React.createElement("div", { key: i, className: "grid-cell" }))), !ready && /* @__PURE__ */ React.createElement("div", { className: "camera-loading" }, "\u05E4\u05D5\u05EA\u05D7 \u05DE\u05E6\u05DC\u05DE\u05D4\u2026")), /* @__PURE__ */ React.createElement("button", { className: "capture-btn", onClick: capture, disabled: !ready }, /* @__PURE__ */ React.createElement(Camera, { size: 22 }), " \u05E6\u05DC\u05DD \u05E4\u05D0\u05D4 \u05D6\u05D5"), /* @__PURE__ */ React.createElement("canvas", { ref: canvasRef, style: { display: "none" } }));
+  return /* @__PURE__ */ React.createElement("div", { className: "screen scan-screen" }, /* @__PURE__ */ React.createElement("div", { className: "scan-header" }, /* @__PURE__ */ React.createElement("button", { className: "icon-btn", onClick: onBack, "aria-label": "\u05D7\u05D6\u05E8\u05D4" }, /* @__PURE__ */ React.createElement(ChevronRight, { size: 22 })), /* @__PURE__ */ React.createElement("div", { className: "scan-progress" }, FACE_SEQUENCE.map((f, i) => /* @__PURE__ */ React.createElement("div", { key: f, className: `dot ${i === faceIdx ? "dot-active" : ""} ${i < faceIdx ? "dot-done" : ""}` }))), /* @__PURE__ */ React.createElement("div", { style: { width: 38 } })), /* @__PURE__ */ React.createElement("h2", { className: "scan-title" }, "\u05E1\u05E8\u05D5\u05E7 \u05E4\u05D0\u05D4 ", faceIdx + 1, " \u05DE\u05EA\u05D5\u05DA 6: ", /* @__PURE__ */ React.createElement("span", { className: "accent" }, FACE_LABEL_HE[face])), /* @__PURE__ */ React.createElement("p", { className: "scan-guidance" }, FACE_GUIDANCE_HE[face]), /* @__PURE__ */ React.createElement("div", { className: "guide-cube-frame" }, /* @__PURE__ */ React.createElement(GuideCube3D, { targetFace: face, capturedColors })), /* @__PURE__ */ React.createElement("div", { className: "camera-wrap" }, /* @__PURE__ */ React.createElement("video", { ref: videoRef, className: "camera-video", playsInline: true, muted: true }), /* @__PURE__ */ React.createElement("div", { className: "grid-overlay" }, Array.from({ length: 9 }).map((_, i) => /* @__PURE__ */ React.createElement("div", { key: i, className: "grid-cell" }))), !ready && /* @__PURE__ */ React.createElement("div", { className: "camera-loading" }, "\u05E4\u05D5\u05EA\u05D7 \u05DE\u05E6\u05DC\u05DE\u05D4\u2026")), /* @__PURE__ */ React.createElement("button", { className: "capture-btn", onClick: capture, disabled: !ready }, /* @__PURE__ */ React.createElement(Camera, { size: 22 }), " \u05E6\u05DC\u05DD \u05E4\u05D0\u05D4 \u05D6\u05D5"), /* @__PURE__ */ React.createElement("canvas", { ref: canvasRef, style: { display: "none" } }));
 }
 function ReviewScreen({ rawCaptures, palette, assignmentsByFace, onChangeCell, onConfirm, onRescanFace, faceOrderIdx, setFaceOrderIdx }) {
   const face = FACE_SEQUENCE[faceOrderIdx];
@@ -2723,6 +2733,118 @@ function animateOneMove(st, move, orbitRef, durationMs) {
     requestAnimationFrame(frame);
   });
 }
+const GUIDE_GRAY = "#9a9aa4";
+function buildGuideCubieMesh(cubie) {
+  const dirs = [["x", 1], ["x", -1], ["y", 1], ["y", -1], ["z", 1], ["z", -1]];
+  const materials = dirs.map(([axis, dir]) => {
+    const sticker = cubie.stickers.find((s) => s.axis === axis && s.dir === dir);
+    const color = sticker ? GUIDE_GRAY : DARK_PLASTIC;
+    return new THREE.MeshLambertMaterial({ color });
+  });
+  const geo = new THREE.BoxGeometry(CUBIE_SIZE, CUBIE_SIZE, CUBIE_SIZE);
+  const mesh = new THREE.Mesh(geo, materials);
+  const group = new THREE.Group();
+  group.add(mesh);
+  group.userData.mesh = mesh;
+  return group;
+}
+const MAT_INDEX = { "x1": 0, "x-1": 1, "y1": 2, "y-1": 3, "z1": 4, "z-1": 5 };
+function GuideCube3D({ targetFace, capturedColors }) {
+  const mountRef = useRef(null);
+  const stateRef = useRef({ renderer: null, camera: null, scene: null, rig: null, meshById: {}, refCube: null });
+  const currentQuatRef = useRef(new THREE.Quaternion());
+  const animRef = useRef(null);
+  useEffect(() => {
+    const mount = mountRef.current;
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(36, 1, 0.1, 100);
+    camera.position.set(0, 0, 6.4);
+    camera.lookAt(0, 0, 0);
+    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    mount.appendChild(renderer.domElement);
+    scene.add(new THREE.AmbientLight(16777215, 0.8));
+    const d1 = new THREE.DirectionalLight(16777215, 0.5);
+    d1.position.set(4, 6, 5);
+    scene.add(d1);
+    const d2 = new THREE.DirectionalLight(16777215, 0.25);
+    d2.position.set(-4, -2, -3);
+    scene.add(d2);
+    const rig = new THREE.Group();
+    scene.add(rig);
+    const refColorMap = { U: "U", D: "D", F: "F", B: "B", L: "L", R: "R" };
+    const refCube = makeSolvedCube(refColorMap);
+    const meshById = {};
+    refCube.forEach((cubie) => {
+      const group = buildGuideCubieMesh(cubie);
+      group.position.set(cubie.pos[0] * CUBIE_GAP, cubie.pos[1] * CUBIE_GAP, cubie.pos[2] * CUBIE_GAP);
+      rig.add(group);
+      meshById[cubie.id] = group;
+    });
+    Object.assign(stateRef.current, { renderer, camera, scene, rig, meshById, refCube });
+    function resize() {
+      const w = mount.clientWidth, h = mount.clientHeight;
+      renderer.setSize(w, h);
+      camera.aspect = w / h;
+      camera.updateProjectionMatrix();
+    }
+    resize();
+    const ro = new ResizeObserver(resize);
+    ro.observe(mount);
+    let raf;
+    function tick() {
+      renderer.render(scene, camera);
+      raf = requestAnimationFrame(tick);
+    }
+    tick();
+    return () => {
+      cancelAnimationFrame(raf);
+      ro.disconnect();
+      renderer.dispose();
+      if (mount.contains(renderer.domElement)) mount.removeChild(renderer.domElement);
+    };
+  }, []);
+  useEffect(() => {
+    const st = stateRef.current;
+    if (!st.rig) return;
+    const targetMatrix = faceViewMatrix(targetFace);
+    const targetQuat = matrixToQuaternion(targetMatrix);
+    const startQuat = currentQuatRef.current.clone();
+    if (animRef.current) cancelAnimationFrame(animRef.current);
+    const t0 = performance.now();
+    const duration = 700;
+    function frame(now) {
+      const t = Math.min(1, (now - t0) / duration);
+      const eased = t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
+      const q = startQuat.clone().slerp(targetQuat, eased);
+      st.rig.quaternion.copy(q);
+      if (t < 1) {
+        animRef.current = requestAnimationFrame(frame);
+      } else {
+        currentQuatRef.current = targetQuat.clone();
+      }
+    }
+    animRef.current = requestAnimationFrame(frame);
+  }, [targetFace]);
+  useEffect(() => {
+    const st = stateRef.current;
+    if (!st.refCube) return;
+    FACE_SEQUENCE.forEach((face) => {
+      const colors = capturedColors[face];
+      if (!colors) return;
+      const { axis, dir } = FACE_INFO[face];
+      const positions = faceLayerPositions(face);
+      positions.forEach((pos, i) => {
+        const cubie = st.refCube.find((c) => c.pos[0] === pos[0] && c.pos[1] === pos[1] && c.pos[2] === pos[2]);
+        const group = st.meshById[cubie.id];
+        const mesh = group.userData.mesh;
+        const matIdx = MAT_INDEX[`${axis}${dir}`];
+        mesh.material[matIdx].color.set(colors[i]);
+      });
+    });
+  }, [capturedColors]);
+  return /* @__PURE__ */ React.createElement("div", { ref: mountRef, className: "guide-cube-mount" });
+}
 const STYLES = `
 @import url('https://fonts.googleapis.com/css2?family=Heebo:wght@400;500;600;700;800&display=swap');
 
@@ -2828,9 +2950,16 @@ html, body { margin:0; padding:0; }
 .accent { color:#4a5b9e; }
 .scan-guidance { color:#5a5a6a; font-size:14px; line-height:1.55; margin:0 0 16px; }
 
+.guide-cube-frame {
+  width:100%; height:30vh; max-height:230px; border-radius:22px; overflow:hidden;
+  background: radial-gradient(circle at 50% 40%, #eef1fc, #dce2f8);
+  margin-bottom:14px; touch-action:none;
+}
+.guide-cube-mount { width:100%; height:100%; }
+
 .camera-wrap {
-  position:relative; width:100%; aspect-ratio:1/1; border-radius:24px; overflow:hidden;
-  background:#111; box-shadow: 0 6px 24px rgba(0,0,0,0.18); margin-bottom:18px;
+  position:relative; width:100%; aspect-ratio:1/1; max-height:38vh; border-radius:24px; overflow:hidden;
+  background:#111; box-shadow: 0 6px 24px rgba(0,0,0,0.18); margin-bottom:18px; margin-inline:auto;
 }
 .camera-video { width:100%; height:100%; object-fit:cover; display:block; }
 .camera-error, .camera-loading {
@@ -3030,7 +3159,7 @@ function App() {
   };
   const runValidationAndSolve = () => {
     let facelet = "";
-    FACE_SEQUENCE.forEach((f) => {
+    FACE_ORDER.forEach((f) => {
       assignmentsByFace[f].forEach((pIdx) => {
         facelet += COLOR_LETTERS[pIdx];
       });
@@ -3084,6 +3213,7 @@ function App() {
     {
       faceIdx,
       stream: cameraStream,
+      rawCaptures,
       onCapture: handleCapture,
       onBack: () => faceIdx === 0 ? setScreen("intro") : setFaceIdx(faceIdx - 1)
     }
