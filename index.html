@@ -2466,8 +2466,8 @@ function detectGrid(imageData) {
   const avgBrightness = colSmooth.reduce((a, b) => a + b, 0) / size;
   const [c1, c2] = findTwoMinima(colSmooth);
   const [r1, r2] = findTwoMinima(rowSmooth);
-  const colConfident = c1.val < avgBrightness * 0.72 && c2.val < avgBrightness * 0.72 && c2.pos - c1.pos > size * 0.08;
-  const rowConfident = r1.val < avgBrightness * 0.72 && r2.val < avgBrightness * 0.72 && r2.pos - r1.pos > size * 0.08;
+  const colConfident = c1.val < avgBrightness * 0.6 && c2.val < avgBrightness * 0.6 && c2.pos - c1.pos > size * 0.08;
+  const rowConfident = r1.val < avgBrightness * 0.6 && r2.val < avgBrightness * 0.6 && r2.pos - r1.pos > size * 0.08;
   const colBoundaries = colConfident ? [0, c1.pos, c2.pos, size] : [0, size / 3, 2 * size / 3, size];
   const rowBoundaries = rowConfident ? [0, r1.pos, r2.pos, size] : [0, size / 3, 2 * size / 3, size];
   return { colBoundaries, rowBoundaries, confident: colConfident && rowConfident };
@@ -2501,22 +2501,23 @@ function sampleCellRobust(imageData, x0, x1, y0, y1) {
   const avgDistance = classified.filter((c, i) => classified[i].index === winner).reduce((a, c) => a + c.distance, 0) / agreeing.length;
   return { index: winner, rgb: avgRgb, distance: avgDistance, agreement: agreeing.length / samples.length };
 }
-const NOT_A_CUBE_DISTANCE = 85;
+const NOT_A_CUBE_DISTANCE = 105;
 function analyzeFaceCapture(imageData) {
   const size = imageData.width;
   const { colBoundaries, rowBoundaries, confident: gridConfident } = detectGrid(imageData);
   const colorIndices = [];
   const rgbs = [];
-  let maxDist = 0;
+  const distances = [];
   for (let row = 0; row < 3; row++) for (let col = 0; col < 3; col++) {
     const x0 = colBoundaries[col], x1 = colBoundaries[col + 1];
     const y0 = rowBoundaries[row], y1 = rowBoundaries[row + 1];
     const { index, rgb, distance } = sampleCellRobust(imageData, x0, x1, y0, y1);
     colorIndices.push(index);
     rgbs.push(rgb);
-    if (distance > maxDist) maxDist = distance;
+    distances.push(distance);
   }
-  const looksLikeCube = maxDist < NOT_A_CUBE_DISTANCE && gridConfident;
+  const badCells = distances.filter((d) => d > NOT_A_CUBE_DISTANCE).length;
+  const looksLikeCube = badCells <= 2;
   return { colorIndices, rgbs, looksLikeCube, gridConfident };
 }
 const FACE_SEQUENCE = ["F", "R", "B", "L", "U", "D"];
