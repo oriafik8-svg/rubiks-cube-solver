@@ -2385,30 +2385,54 @@ function hueDist(h1, h2) {
 const CUBE_COLORS_HSV = CUBE_COLORS.map((c) => rgbToHsv(...c.rgb));
 const WHITE_IDX = 0;
 function classifyToFixedPalette(rgb) {
-  const [h, s, v] = rgbToHsv(rgb[0], rgb[1], rgb[2]);
-  // White: low saturation OR very bright with modest saturation
-  if ((s < 0.28 && v > 0.55) || (v > 0.85 && s < 0.35)) {
-    const distance2 = (1 - v) * 160 + s * 90;
-    return { index: WHITE_IDX, distance: distance2 };
+  const [r, g, b] = rgb;
+  const [h, s, v] = rgbToHsv(r, g, b);
+  const maxC = Math.max(r, g, b), minC = Math.min(r, g, b);
+  const spread = maxC - minC;
+  // White: very low chroma relative to brightness. Uses absolute RGB spread
+  // rather than HSV-saturation alone, which is more robust for bright cubes.
+  if (spread < 40 && v > 0.55) {
+    return { index: WHITE_IDX, distance: (1 - v) * 120 + spread * 0.6 };
   }
+  if (spread < 60 && v > 0.75 && s < 0.28) {
+    return { index: WHITE_IDX, distance: (1 - v) * 120 + spread * 0.6 };
+  }
+  // Direct hue-band classification for cube colors (order-independent).
+  // Yellow: hue ~40-70, distinctly bright with strong R+G, low B.
+  if (h >= 38 && h <= 72 && r > 140 && g > 130 && b < Math.min(r, g) * 0.75) {
+    return { index: 1, distance: hueDist(h, 55) };
+  }
+  // Orange: hue ~15-38, R clearly dominant, G noticeably > B.
+  if (h >= 12 && h < 38 && r > 150 && g > 60 && r > g * 1.25 && g > b * 1.2) {
+    return { index: 3, distance: hueDist(h, 28) };
+  }
+  // Red: hue near 0/360 or low-hue with G small vs R.
+  if ((h < 15 || h > 345) && r > 90 && r > g * 1.6 && r > b * 1.4) {
+    return { index: 2, distance: Math.min(h, 360 - h) };
+  }
+  // Green: hue ~90-170.
+  if (h >= 85 && h <= 175 && g > r * 1.05 && g > b * 0.9) {
+    return { index: 5, distance: hueDist(h, 130) };
+  }
+  // Blue: hue ~185-260.
+  if (h >= 180 && h <= 265 && b > r && b > g * 0.85) {
+    return { index: 4, distance: hueDist(h, 220) };
+  }
+  // Fallback: nearest by hue among non-white, with red/orange tie-break.
   let best = -1, bestD = Infinity;
   CUBE_COLORS.forEach((c, i) => {
     if (i === WHITE_IDX) return;
     const d = hueDist(h, CUBE_COLORS_HSV[i][0]);
     if (d < bestD) { bestD = d; best = i; }
   });
-  // Red/orange disambiguation via value/saturation ratio
   if (best === 2 || best === 3) {
-    const dR = hueDist(h, CUBE_COLORS_HSV[2][0]);
-    const dO = hueDist(h, CUBE_COLORS_HSV[3][0]);
-    if (Math.abs(dR - dO) < 12) {
-      // similar hue distance -> use brightness/saturation: orange is brighter & less saturated
-      best = (v > 0.62 && s < 0.85) ? 3 : 2;
-    }
+    // Orange has more green in it than red.
+    best = (g > 90 && r > g * 1.3 && g > b * 1.3) ? 3 : 2;
   }
   const distance = bestD * 1.6 + Math.max(0, 0.30 - s) * 120 + Math.max(0, 0.22 - v) * 120;
   return { index: best, distance };
 }
+
 function toGrayscale(imageData) {
   const { data, width, height } = imageData;
   const gray = new Float32Array(width * height);
@@ -3430,10 +3454,12 @@ function App() {
       setScreen("review");
     }
   };
-  const handleChangeCell = (face, cellIdx) => {
+  const handleChangeCell = (face, cellIdx, colorIdx) => {
     setRawCaptures((prev) => {
       const arr = prev[face].slice();
-      arr[cellIdx] = (arr[cellIdx] + 1) % CUBE_COLORS.length;
+      arr[cellIdx] = (typeof colorIdx === "number")
+        ? colorIdx
+        : (arr[cellIdx] + 1) % CUBE_COLORS.length;
       return { ...prev, [face]: arr };
     });
   };
