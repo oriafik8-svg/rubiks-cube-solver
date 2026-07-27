@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="he" dir="rtl">
 <head>
@@ -2385,20 +2386,27 @@ const CUBE_COLORS_HSV = CUBE_COLORS.map((c) => rgbToHsv(...c.rgb));
 const WHITE_IDX = 0;
 function classifyToFixedPalette(rgb) {
   const [h, s, v] = rgbToHsv(rgb[0], rgb[1], rgb[2]);
-  if (s < 0.22) {
-    const distance2 = (1 - v) * 160 + s * 120;
+  // White: low saturation OR very bright with modest saturation
+  if ((s < 0.28 && v > 0.55) || (v > 0.85 && s < 0.35)) {
+    const distance2 = (1 - v) * 160 + s * 90;
     return { index: WHITE_IDX, distance: distance2 };
   }
   let best = -1, bestD = Infinity;
   CUBE_COLORS.forEach((c, i) => {
     if (i === WHITE_IDX) return;
     const d = hueDist(h, CUBE_COLORS_HSV[i][0]);
-    if (d < bestD) {
-      bestD = d;
-      best = i;
-    }
+    if (d < bestD) { bestD = d; best = i; }
   });
-  const distance = bestD * 1.8 + Math.max(0, 0.35 - s) * 140 + Math.max(0, 0.25 - v) * 140;
+  // Red/orange disambiguation via value/saturation ratio
+  if (best === 2 || best === 3) {
+    const dR = hueDist(h, CUBE_COLORS_HSV[2][0]);
+    const dO = hueDist(h, CUBE_COLORS_HSV[3][0]);
+    if (Math.abs(dR - dO) < 12) {
+      // similar hue distance -> use brightness/saturation: orange is brighter & less saturated
+      best = (v > 0.62 && s < 0.85) ? 3 : 2;
+    }
+  }
+  const distance = bestD * 1.6 + Math.max(0, 0.30 - s) * 120 + Math.max(0, 0.22 - v) * 120;
   return { index: best, distance };
 }
 function toGrayscale(imageData) {
@@ -2619,15 +2627,7 @@ function ReviewScreen({ rawCaptures, onChangeCell, onConfirm, onRescanFace, face
   const [paintIdx, setPaintIdx] = useState(0);
   const counts = new Array(CUBE_COLORS.length).fill(0);
   FACE_SEQUENCE.forEach((f) => (rawCaptures[f] || []).forEach((idx) => counts[idx]++));
-  return /* @__PURE__ */ React.createElement("div", { className: "screen review-screen" }, /* @__PURE__ */ React.createElement("h2", { className: "scan-title" }, "\u05D1\u05D3\u05D9\u05E7\u05EA \u05E6\u05D1\u05E2\u05D9\u05DD: ", /* @__PURE__ */ React.createElement("span", { className: "accent" }, FACE_LABEL_HE[face])), /* @__PURE__ */ React.createElement("p", { className: "scan-guidance" }, "\u05D2\u05E8\u05D5\u05E8 \u05DB\u05D3\u05D9 \u05DC\u05E1\u05D5\u05D1\u05D1 \u05D5\u05DC\u05D1\u05D3\u05D5\u05E7 \u05D0\u05EA \u05DB\u05DC \u05D4\u05E7\u05D5\u05D1\u05D9\u05D9\u05D4. \u05D0\u05DD \u05E6\u05D1\u05E2 \u05DC\u05D0 \u05E0\u05DB\u05D5\u05DF: \u05D1\u05D7\u05E8 \u05D0\u05EA \u05D4\u05E6\u05D1\u05E2 \u05D4\u05E0\u05DB\u05D5\u05DF \u05DC\u05DE\u05D8\u05D4, \u05D5\u05D0\u05D6 \u05D4\u05E7\u05E9 \u05E2\u05DC \u05D4\u05DE\u05E9\u05D1\u05E6\u05EA \u05E9\u05E6\u05E8\u05D9\u05DA \u05DC\u05EA\u05E7\u05DF."), /* @__PURE__ */ React.createElement("div", { className: "inspect-cube-frame" }, /* @__PURE__ */ React.createElement(InspectCube3D, { rawCaptures })), /* @__PURE__ */ React.createElement("div", { className: "face-tabs" }, FACE_SEQUENCE.map((f, i) => /* @__PURE__ */ React.createElement("button", { key: f, className: `face-tab ${i === faceOrderIdx ? "face-tab-active" : ""}`, onClick: () => setFaceOrderIdx(i) }, FACE_LABEL_HE[f]))), /* @__PURE__ */ React.createElement("div", { className: "review-grid" }, cells.map((colorIdx, i) => /* @__PURE__ */ React.createElement(
-    "button",
-    {
-      key: i,
-      className: "review-cell",
-      style: { background: CUBE_COLORS[colorIdx].css },
-      onClick: () => onChangeCell(face, i, paintIdx)
-    }
-  ))), /* @__PURE__ */ React.createElement("p", { className: "paint-label" }, "\u05E6\u05D1\u05E2 \u05DC\u05EA\u05D9\u05E7\u05D5\u05DF:"), /* @__PURE__ */ React.createElement("div", { className: "paint-palette" }, CUBE_COLORS.map((c, i) => /* @__PURE__ */ React.createElement(
+  return /* @__PURE__ */ React.createElement("div", { className: "screen review-screen" }, /* @__PURE__ */ React.createElement("h2", { className: "scan-title" }, "\u05D1\u05D3\u05D9\u05E7\u05EA \u05E6\u05D1\u05E2\u05D9\u05DD: ", /* @__PURE__ */ React.createElement("span", { className: "accent" }, FACE_LABEL_HE[face])), /* @__PURE__ */ React.createElement("p", { className: "scan-guidance" }, "\u05D2\u05E8\u05D5\u05E8 \u05DB\u05D3\u05D9 \u05DC\u05E1\u05D5\u05D1\u05D1 \u05D5\u05DC\u05D1\u05D3\u05D5\u05E7 \u05D0\u05EA \u05DB\u05DC \u05D4\u05E7\u05D5\u05D1\u05D9\u05D9\u05D4. \u05D0\u05DD \u05E6\u05D1\u05E2 \u05DC\u05D0 \u05E0\u05DB\u05D5\u05DF: \u05D1\u05D7\u05E8 \u05D0\u05EA \u05D4\u05E6\u05D1\u05E2 \u05D4\u05E0\u05DB\u05D5\u05DF \u05DC\u05DE\u05D8\u05D4, \u05D5\u05D0\u05D6 \u05D4\u05E7\u05E9 \u05E2\u05DC \u05D4\u05DE\u05E9\u05D1\u05E6\u05EA \u05E9\u05E6\u05E8\u05D9\u05DA \u05DC\u05EA\u05E7\u05DF."), /* @__PURE__ */ React.createElement("div", { className: "inspect-cube-frame" }, /* @__PURE__ */ React.createElement(InspectCube3D, { rawCaptures, paintIdx, onChangeCell })), /* @__PURE__ */ React.createElement("div", { className: "face-tabs" }, FACE_SEQUENCE.map((f, i) => /* @__PURE__ */ React.createElement("button", { key: f, className: `face-tab ${i === faceOrderIdx ? "face-tab-active" : ""}`, onClick: () => setFaceOrderIdx(i) }, FACE_LABEL_HE[f]))), /* @__PURE__ */ React.createElement("p", { className: "paint-label" }, "\u05E6\u05D1\u05E2 \u05DC\u05EA\u05D9\u05E7\u05D5\u05DF:"), /* @__PURE__ */ React.createElement("div", { className: "paint-palette" }, CUBE_COLORS.map((c, i) => /* @__PURE__ */ React.createElement(
     "button",
     {
       key: c.key,
@@ -2636,7 +2636,7 @@ function ReviewScreen({ rawCaptures, onChangeCell, onConfirm, onRescanFace, face
       onClick: () => setPaintIdx(i)
     },
     /* @__PURE__ */ React.createElement("span", { className: `paint-count ${counts[i] !== 9 ? "paint-count-bad" : ""}` }, counts[i])
-  ))), /* @__PURE__ */ React.createElement("p", { className: "paint-hint" }, "\u05DB\u05DC \u05E6\u05D1\u05E2 \u05D0\u05DE\u05D5\u05E8 \u05DC\u05D4\u05D5\u05E4\u05D9\u05E2 \u05D1\u05D3\u05D9\u05D5\u05E7 9 \u05E4\u05E2\u05DE\u05D9\u05DD \u05D1\u05E1\u05DA \u05D4\u05DB\u05DC \u05D1\u05E7\u05D5\u05D1\u05D9\u05D9\u05D4 - \u05D4\u05DE\u05E1\u05E4\u05E8 \u05D4\u05D0\u05D3\u05D5\u05DD \u05DE\u05E1\u05DE\u05DF \u05D7\u05D5\u05E1\u05E8 \u05D4\u05EA\u05D0\u05DE\u05D4."), /* @__PURE__ */ React.createElement("div", { className: "review-actions" }, /* @__PURE__ */ React.createElement("button", { className: "secondary-btn", onClick: () => onRescanFace(faceOrderIdx) }, /* @__PURE__ */ React.createElement(RefreshCw, { size: 18 }), " \u05E1\u05E8\u05D5\u05E7 \u05E4\u05D0\u05D4 \u05D6\u05D5 \u05DE\u05D7\u05D3\u05E9"), faceOrderIdx < 5 ? /* @__PURE__ */ React.createElement("button", { className: "primary-btn", onClick: () => setFaceOrderIdx(faceOrderIdx + 1) }, "\u05D4\u05E4\u05D0\u05D4 \u05D4\u05D1\u05D0\u05D4 ", /* @__PURE__ */ React.createElement(ChevronLeft, { size: 18 })) : /* @__PURE__ */ React.createElement("button", { className: "primary-btn", onClick: onConfirm }, /* @__PURE__ */ React.createElement(Check, { size: 18 }), " \u05D1\u05D3\u05D5\u05E7 \u05EA\u05E7\u05D9\u05E0\u05D5\u05EA")));
+  ))), /* @__PURE__ */ React.createElement("p", { className: "paint-hint" }, "\u05D1\u05D7\u05E8 \u05E6\u05D1\u05E2 \u05DC\u05EA\u05D9\u05E7\u05D5\u05DF, \u05D5\u05D0\u05D6 \u05D2\u05E2 \u05D9\u05E9\u05D9\u05E8\u05D5\u05EA \u05D1\u05DE\u05D3\u05D1\u05E7\u05D4 \u05E9\u05D1\u05E7\u05D5\u05D1\u05D9\u05D9\u05D4 \u05DB\u05D3\u05D9 \u05DC\u05E6\u05D1\u05D5\u05E2 \u05D0\u05D5\u05EA\u05D4. \u05D2\u05E8\u05D5\u05E8 \u05D0\u05EA \u05D4\u05E7\u05D5\u05D1\u05D9\u05D9\u05D4 \u05DB\u05D3\u05D9 \u05DC\u05E1\u05D5\u05D1\u05D1 \u05D0\u05D5\u05EA\u05D4. \u05D4\u05DE\u05E1\u05E4\u05E8 \u05D4\u05D0\u05D3\u05D5\u05DD \u05DE\u05E1\u05DE\u05DF \u05D7\u05D5\u05E1\u05E8 \u05D4\u05EA\u05D0\u05DE\u05D4."), /* @__PURE__ */ React.createElement("div", { className: "review-actions" }, /* @__PURE__ */ React.createElement("button", { className: "secondary-btn", onClick: () => onRescanFace(faceOrderIdx) }, /* @__PURE__ */ React.createElement(RefreshCw, { size: 18 }), " \u05E1\u05E8\u05D5\u05E7 \u05E4\u05D0\u05D4 \u05D6\u05D5 \u05DE\u05D7\u05D3\u05E9"), faceOrderIdx < 5 ? /* @__PURE__ */ React.createElement("button", { className: "primary-btn", onClick: () => setFaceOrderIdx(faceOrderIdx + 1) }, "\u05D4\u05E4\u05D0\u05D4 \u05D4\u05D1\u05D0\u05D4 ", /* @__PURE__ */ React.createElement(ChevronLeft, { size: 18 })) : /* @__PURE__ */ React.createElement("button", { className: "primary-btn", onClick: onConfirm }, /* @__PURE__ */ React.createElement(Check, { size: 18 }), " \u05D1\u05D3\u05D5\u05E7 \u05EA\u05E7\u05D9\u05E0\u05D5\u05EA")));
 }
 function ValidationErrorScreen({ result, onRescan, onBack }) {
   return /* @__PURE__ */ React.createElement("div", { className: "screen" }, /* @__PURE__ */ React.createElement("div", { className: "error-hero" }, /* @__PURE__ */ React.createElement(AlertTriangle, { size: 40, color: "#c0392b" }), /* @__PURE__ */ React.createElement("h2", null, "\u05E0\u05DE\u05E6\u05D0\u05D4 \u05D1\u05E2\u05D9\u05D4 \u05D1\u05E1\u05E8\u05D9\u05E7\u05D4")), /* @__PURE__ */ React.createElement("div", { className: "error-list" }, result.errors.map((e, i) => /* @__PURE__ */ React.createElement("div", { key: i, className: "error-item" }, /* @__PURE__ */ React.createElement("span", { className: "error-dot" }), /* @__PURE__ */ React.createElement("p", null, e.message)))), /* @__PURE__ */ React.createElement("p", { className: "error-hint" }, "\u05D1\u05D3\u05D5\u05E7 \u05E9\u05D5\u05D1 \u05D0\u05EA \u05D4\u05E4\u05D0\u05D5\u05EA \u05E9\u05E1\u05E8\u05E7\u05EA - \u05D1\u05DE\u05D9\u05D5\u05D7\u05D3 \u05E9\u05D4\u05D7\u05D6\u05E7\u05EA \u05D0\u05EA \u05D4\u05E7\u05D5\u05D1\u05D9\u05D9\u05D4 \u05D1\u05D0\u05D5\u05EA\u05D5 \u05DB\u05D9\u05D5\u05D5\u05DF \u05DB\u05E4\u05D9 \u05E9\u05DE\u05EA\u05D5\u05D0\u05E8 \u05D1\u05D4\u05E0\u05D7\u05D9\u05D5\u05EA, \u05D5\u05E9\u05DB\u05DC \u05DE\u05D3\u05D1\u05E7\u05D4 \u05D6\u05D5\u05D4\u05EA\u05D4 \u05D1\u05E6\u05D1\u05E2 \u05D4\u05E0\u05DB\u05D5\u05DF."), /* @__PURE__ */ React.createElement("button", { className: "primary-btn full", onClick: onBack }, /* @__PURE__ */ React.createElement(RefreshCw, { size: 18 }), " \u05D7\u05D6\u05E8\u05D4 \u05DC\u05D1\u05D3\u05D9\u05E7\u05EA \u05D4\u05E6\u05D1\u05E2\u05D9\u05DD"));
@@ -2970,10 +2970,13 @@ function GuideCube3D({ targetFace, capturedColors }) {
   }, [capturedColors]);
   return /* @__PURE__ */ React.createElement("div", { ref: mountRef, className: "guide-cube-mount" });
 }
-function InspectCube3D({ rawCaptures }) {
+function InspectCube3D({ rawCaptures, paintIdx, onChangeCell }) {
   const mountRef = useRef(null);
-  const stateRef = useRef({ renderer: null, camera: null, scene: null, meshById: {}, refCube: null });
-  const orbitRef = useRef({ az: 0.6, el: 0.45, dragging: false, lastX: 0, lastY: 0 });
+  const stateRef = useRef({ renderer: null, camera: null, scene: null, meshById: {}, refCube: null, stickerLookup: {}, meshes: [] });
+  const orbitRef = useRef({ az: 0.6, el: 0.45, dragging: false, lastX: 0, lastY: 0, downX: 0, downY: 0, moved: false });
+  const paintRef = useRef({ paintIdx: 0, onChangeCell: null });
+  paintRef.current.paintIdx = paintIdx;
+  paintRef.current.onChangeCell = onChangeCell;
   useEffect(() => {
     const mount = mountRef.current;
     const scene = new THREE.Scene();
@@ -2991,13 +2994,28 @@ function InspectCube3D({ rawCaptures }) {
     const refColorMap = { U: "U", D: "D", F: "F", B: "B", L: "L", R: "R" };
     const refCube = makeSolvedCube(refColorMap);
     const meshById = {};
+    const meshes = [];
     refCube.forEach((cubie) => {
       const group = buildGuideCubieMesh(cubie);
       group.position.set(cubie.pos[0] * CUBIE_GAP, cubie.pos[1] * CUBIE_GAP, cubie.pos[2] * CUBIE_GAP);
       scene.add(group);
       meshById[cubie.id] = group;
+      const m = group.userData.mesh;
+      m.userData.cubieId = cubie.id;
+      meshes.push(m);
     });
-    Object.assign(stateRef.current, { renderer, camera, scene, meshById, refCube });
+    // Build (cubieId, matIdx) -> {face, cellIdx}
+    const stickerLookup = {};
+    FACE_SEQUENCE.forEach((face) => {
+      const { axis, dir } = FACE_INFO[face];
+      const matIdx = MAT_INDEX[`${axis}${dir}`];
+      const positions = faceLayerPositions(face);
+      positions.forEach((pos, cellIdx) => {
+        const cubie = refCube.find((c) => c.pos[0] === pos[0] && c.pos[1] === pos[1] && c.pos[2] === pos[2]);
+        stickerLookup[cubie.id + "_" + matIdx] = { face, cellIdx };
+      });
+    });
+    Object.assign(stateRef.current, { renderer, camera, scene, meshById, refCube, stickerLookup, meshes });
     function resize() {
       const w = mount.clientWidth, h = mount.clientHeight;
       renderer.setSize(w, h);
@@ -3014,28 +3032,59 @@ function InspectCube3D({ rawCaptures }) {
       camera.lookAt(0, 0, 0);
     }
     updateCam();
+    const raycaster = new THREE.Raycaster();
+    const ndc = new THREE.Vector2();
     function onDown(e) {
       orbitRef.current.dragging = true;
       orbitRef.current.lastX = e.clientX;
       orbitRef.current.lastY = e.clientY;
+      orbitRef.current.downX = e.clientX;
+      orbitRef.current.downY = e.clientY;
+      orbitRef.current.moved = false;
     }
     function onMove(e) {
       if (!orbitRef.current.dragging) return;
       const dx = e.clientX - orbitRef.current.lastX, dy = e.clientY - orbitRef.current.lastY;
       orbitRef.current.lastX = e.clientX;
       orbitRef.current.lastY = e.clientY;
-      orbitRef.current.az -= dx * 8e-3;
-      orbitRef.current.el = Math.max(-1.2, Math.min(1.2, orbitRef.current.el + dy * 8e-3));
-      updateCam();
+      const totDx = e.clientX - orbitRef.current.downX;
+      const totDy = e.clientY - orbitRef.current.downY;
+      if (Math.hypot(totDx, totDy) > 6) orbitRef.current.moved = true;
+      if (orbitRef.current.moved) {
+        orbitRef.current.az -= dx * 8e-3;
+        orbitRef.current.el = Math.max(-1.2, Math.min(1.2, orbitRef.current.el + dy * 8e-3));
+        updateCam();
+      }
     }
-    function onUp() {
+    function onUp(e) {
+      const wasDrag = orbitRef.current.moved;
       orbitRef.current.dragging = false;
+      if (wasDrag) return;
+      // Tap: raycast against sticker meshes
+      const st = stateRef.current;
+      if (!st.meshes || !st.meshes.length) return;
+      const rect = renderer.domElement.getBoundingClientRect();
+      const cx = (e.clientX ?? orbitRef.current.lastX);
+      const cy = (e.clientY ?? orbitRef.current.lastY);
+      ndc.x = ((cx - rect.left) / rect.width) * 2 - 1;
+      ndc.y = -((cy - rect.top) / rect.height) * 2 + 1;
+      raycaster.setFromCamera(ndc, camera);
+      const hits = raycaster.intersectObjects(st.meshes, false);
+      if (!hits.length) return;
+      const hit = hits[0];
+      const matIdx = hit.face && hit.face.materialIndex;
+      const cubieId = hit.object.userData.cubieId;
+      const info = st.stickerLookup[cubieId + "_" + matIdx];
+      if (!info) return;
+      const { onChangeCell: cb, paintIdx: pi } = paintRef.current;
+      if (cb) cb(info.face, info.cellIdx, pi);
     }
     const el = renderer.domElement;
     el.style.touchAction = "none";
     el.addEventListener("pointerdown", onDown);
     window.addEventListener("pointermove", onMove);
     window.addEventListener("pointerup", onUp);
+    el.addEventListener("pointerup", onUp);
     let raf;
     function tick() {
       renderer.render(scene, camera);
@@ -3046,6 +3095,7 @@ function InspectCube3D({ rawCaptures }) {
       cancelAnimationFrame(raf);
       ro.disconnect();
       el.removeEventListener("pointerdown", onDown);
+      el.removeEventListener("pointerup", onUp);
       window.removeEventListener("pointermove", onMove);
       window.removeEventListener("pointerup", onUp);
       renderer.dispose();
@@ -3208,7 +3258,7 @@ html, body { margin:0; padding:0; }
   width:100%; height:32vh; max-height:250px; border-radius:22px; overflow:hidden;
   background: radial-gradient(circle at 50% 40%, #f2f3f7, #dcdce2);
   margin-bottom:14px; touch-action:none;
-}
+ cursor: pointer; }
 
 .paint-label { font-size:13px; color:#5a5a6a; margin:2px 0 8px; }
 .paint-palette { display:flex; gap:10px; margin-bottom:8px; }
