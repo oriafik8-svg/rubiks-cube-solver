@@ -2345,11 +2345,138 @@ function validateCube(str) {
   if (errors.length) return { valid: false, errors };
   return { valid: true };
 }
+const CUBE_COLORS = [
+  { key: "W", name: "\u05DC\u05D1\u05DF", css: "#ffffff", rgb: [255, 255, 255] },
+  { key: "Y", name: "\u05E6\u05D4\u05D5\u05D1", css: "#ffd500", rgb: [255, 213, 0] },
+  { key: "R", name: "\u05D0\u05D3\u05D5\u05DD", css: "#d21f1f", rgb: [210, 31, 31] },
+  { key: "O", name: "\u05DB\u05EA\u05D5\u05DD", css: "#ff8c00", rgb: [255, 140, 0] },
+  { key: "B", name: "\u05DB\u05D7\u05D5\u05DC", css: "#0057d8", rgb: [0, 87, 216] },
+  { key: "G", name: "\u05D9\u05E8\u05D5\u05E7", css: "#00a839", rgb: [0, 168, 57] }
+];
+const COLOR_LETTERS = CUBE_COLORS.map((c) => c.key);
+function colorDist(a, b) {
+  return Math.sqrt((a[0] - b[0]) ** 2 + (a[1] - b[1]) ** 2 + (a[2] - b[2]) ** 2);
+}
+function rgbToCss([r, g, b]) {
+  return `rgb(${r},${g},${b})`;
+}
+function rgbToHsv(r, g, b) {
+  r /= 255;
+  g /= 255;
+  b /= 255;
+  const max = Math.max(r, g, b), min = Math.min(r, g, b), d = max - min;
+  let h = 0;
+  if (d !== 0) {
+    if (max === r) h = (g - b) / d % 6;
+    else if (max === g) h = (b - r) / d + 2;
+    else h = (r - g) / d + 4;
+    h *= 60;
+    if (h < 0) h += 360;
+  }
+  const s = max === 0 ? 0 : d / max;
+  const v = max;
+  return [h, s, v];
+}
+function hueDist(h1, h2) {
+  const d = Math.abs(h1 - h2) % 360;
+  return d > 180 ? 360 - d : d;
+}
+const CUBE_COLORS_HSV = CUBE_COLORS.map((c) => rgbToHsv(...c.rgb));
+const WHITE_IDX = 0;
+function classifyToFixedPalette(rgb) {
+  const [h, s, v] = rgbToHsv(rgb[0], rgb[1], rgb[2]);
+  if (s < 0.22) {
+    const distance2 = (1 - v) * 160 + s * 120;
+    return { index: WHITE_IDX, distance: distance2 };
+  }
+  let best = -1, bestD = Infinity;
+  CUBE_COLORS.forEach((c, i) => {
+    if (i === WHITE_IDX) return;
+    const d = hueDist(h, CUBE_COLORS_HSV[i][0]);
+    if (d < bestD) {
+      bestD = d;
+      best = i;
+    }
+  });
+  const distance = bestD * 1.8 + Math.max(0, 0.35 - s) * 140 + Math.max(0, 0.25 - v) * 140;
+  return { index: best, distance };
+}
+function toGrayscale(imageData) {
+  const { data, width, height } = imageData;
+  const gray = new Float32Array(width * height);
+  for (let i = 0, p = 0; i < data.length; i += 4, p++) {
+    gray[p] = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
+  }
+  return gray;
+}
+function smooth1D(arr, radius) {
+  const out = new Float32Array(arr.length);
+  for (let i = 0; i < arr.length; i++) {
+    let sum = 0, n = 0;
+    for (let k = -radius; k <= radius; k++) {
+      const j = i + k;
+      if (j >= 0 && j < arr.length) {
+        sum += arr[j];
+        n++;
+      }
+    }
+    out[i] = sum / n;
+  }
+  return out;
+}
+function findTwoMinima(profile, loFrac, hiFrac) {
+  const n = profile.length;
+  const lo = Math.floor(n * loFrac), hi = Math.floor(n * hiFrac);
+  const band1 = [Math.floor(n * 0.22), Math.floor(n * 0.45)];
+  const band2 = [Math.floor(n * 0.55), Math.floor(n * 0.78)];
+  function minInBand([a, b]) {
+    let best = a, bestV = Infinity;
+    for (let i = a; i < b; i++) if (profile[i] < bestV) {
+      bestV = profile[i];
+      best = i;
+    }
+    return { pos: best, val: bestV };
+  }
+  return [minInBand(band1), minInBand(band2)];
+}
+function detectGrid(imageData) {
+  const { width: size } = imageData;
+  const gray = toGrayscale(imageData);
+  const colProfile = new Float32Array(size);
+  const rowProfile = new Float32Array(size);
+  const margin = Math.round(size * 0.1);
+  for (let x = 0; x < size; x++) {
+    let sum = 0, n = 0;
+    for (let y = margin; y < size - margin; y++) {
+      sum += gray[y * size + x];
+      n++;
+    }
+    colProfile[x] = sum / n;
+  }
+  for (let y = 0; y < size; y++) {
+    let sum = 0, n = 0;
+    for (let x = margin; x < size - margin; x++) {
+      sum += gray[y * size + x];
+      n++;
+    }
+    rowProfile[y] = sum / n;
+  }
+  const colSmooth = smooth1D(colProfile, Math.round(size * 0.01) + 1);
+  const rowSmooth = smooth1D(rowProfile, Math.round(size * 0.01) + 1);
+  const avgBrightness = colSmooth.reduce((a, b) => a + b, 0) / size;
+  const [c1, c2] = findTwoMinima(colSmooth);
+  const [r1, r2] = findTwoMinima(rowSmooth);
+  const colConfident = c1.val < avgBrightness * 0.72 && c2.val < avgBrightness * 0.72 && c2.pos - c1.pos > size * 0.08;
+  const rowConfident = r1.val < avgBrightness * 0.72 && r2.val < avgBrightness * 0.72 && r2.pos - r1.pos > size * 0.08;
+  const colBoundaries = colConfident ? [0, c1.pos, c2.pos, size] : [0, size / 3, 2 * size / 3, size];
+  const rowBoundaries = rowConfident ? [0, r1.pos, r2.pos, size] : [0, size / 3, 2 * size / 3, size];
+  return { colBoundaries, rowBoundaries, confident: colConfident && rowConfident };
+}
 function sampleAverageColor(imageData, cx, cy, radius) {
   const { data, width, height } = imageData;
   let r = 0, g = 0, b = 0, n = 0;
-  const x0 = Math.max(0, cx - radius), x1 = Math.min(width - 1, cx + radius);
-  const y0 = Math.max(0, cy - radius), y1 = Math.min(height - 1, cy + radius);
+  const x0 = Math.max(0, Math.round(cx - radius)), x1 = Math.min(width - 1, Math.round(cx + radius));
+  const y0 = Math.max(0, Math.round(cy - radius)), y1 = Math.min(height - 1, Math.round(cy + radius));
   for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) {
     const i = (y * width + x) * 4;
     r += data[i];
@@ -2359,62 +2486,38 @@ function sampleAverageColor(imageData, cx, cy, radius) {
   }
   return n ? [Math.round(r / n), Math.round(g / n), Math.round(b / n)] : [0, 0, 0];
 }
-function colorDist(a, b) {
-  return Math.sqrt((a[0] - b[0]) ** 2 + (a[1] - b[1]) ** 2 + (a[2] - b[2]) ** 2);
+function sampleCellRobust(imageData, x0, x1, y0, y1) {
+  const w = x1 - x0, h = y1 - y0;
+  const pointFracs = [[0.28, 0.28], [0.72, 0.28], [0.28, 0.72], [0.72, 0.72], [0.5, 0.22], [0.5, 0.78], [0.22, 0.5], [0.78, 0.5]];
+  const radius = Math.min(w, h) * 0.11;
+  const samples = pointFracs.map(([fx, fy]) => sampleAverageColor(imageData, x0 + w * fx, y0 + h * fy, radius));
+  const classified = samples.map((rgb) => classifyToFixedPalette(rgb));
+  const votes = new Array(CUBE_COLORS.length).fill(0);
+  classified.forEach((c) => votes[c.index]++);
+  let winner = 0;
+  for (let i = 1; i < votes.length; i++) if (votes[i] > votes[winner]) winner = i;
+  const agreeing = samples.filter((_, i) => classified[i].index === winner);
+  const avgRgb = agreeing.reduce((acc, rgb) => [acc[0] + rgb[0], acc[1] + rgb[1], acc[2] + rgb[2]], [0, 0, 0]).map((v) => Math.round(v / agreeing.length));
+  const avgDistance = classified.filter((c, i) => classified[i].index === winner).reduce((a, c) => a + c.distance, 0) / agreeing.length;
+  return { index: winner, rgb: avgRgb, distance: avgDistance, agreement: agreeing.length / samples.length };
 }
-function rgbToCss([r, g, b]) {
-  return `rgb(${r},${g},${b})`;
-}
-function classifyPalette(samples) {
-  const palette = [];
-  const assignments = [];
-  for (const s of samples) {
-    let best = -1, bestD = Infinity;
-    palette.forEach((p, i) => {
-      const d = colorDist(p.rgb, s.rgb);
-      if (d < bestD) {
-        bestD = d;
-        best = i;
-      }
-    });
-    if (best === -1 || bestD > 55 && palette.length < 6) {
-      palette.push({ rgb: s.rgb.slice(), sum: s.rgb.slice(), count: 1 });
-      assignments.push(palette.length - 1);
-    } else {
-      const p = palette[best];
-      p.sum[0] += s.rgb[0];
-      p.sum[1] += s.rgb[1];
-      p.sum[2] += s.rgb[2];
-      p.count++;
-      p.rgb = [Math.round(p.sum[0] / p.count), Math.round(p.sum[1] / p.count), Math.round(p.sum[2] / p.count)];
-      assignments.push(best);
-    }
+const NOT_A_CUBE_DISTANCE = 85;
+function analyzeFaceCapture(imageData) {
+  const size = imageData.width;
+  const { colBoundaries, rowBoundaries, confident: gridConfident } = detectGrid(imageData);
+  const colorIndices = [];
+  const rgbs = [];
+  let maxDist = 0;
+  for (let row = 0; row < 3; row++) for (let col = 0; col < 3; col++) {
+    const x0 = colBoundaries[col], x1 = colBoundaries[col + 1];
+    const y0 = rowBoundaries[row], y1 = rowBoundaries[row + 1];
+    const { index, rgb, distance } = sampleCellRobust(imageData, x0, x1, y0, y1);
+    colorIndices.push(index);
+    rgbs.push(rgb);
+    if (distance > maxDist) maxDist = distance;
   }
-  while (palette.length > 6) {
-    let bi = 0, bj = 1, bd = Infinity;
-    for (let i = 0; i < palette.length; i++) for (let j = i + 1; j < palette.length; j++) {
-      const d = colorDist(palette[i].rgb, palette[j].rgb);
-      if (d < bd) {
-        bd = d;
-        bi = i;
-        bj = j;
-      }
-    }
-    const merged = { rgb: [0, 0, 0], sum: [palette[bi].sum[0] + palette[bj].sum[0], palette[bi].sum[1] + palette[bj].sum[1], palette[bi].sum[2] + palette[bj].sum[2]], count: palette[bi].count + palette[bj].count };
-    merged.rgb = [Math.round(merged.sum[0] / merged.count), Math.round(merged.sum[1] / merged.count), Math.round(merged.sum[2] / merged.count)];
-    const newPalette = palette.filter((_, i) => i !== bi && i !== bj);
-    newPalette.push(merged);
-    const oldToNew = {};
-    palette.forEach((_, i) => {
-      if (i !== bi && i !== bj) oldToNew[i] = newPalette.findIndex((p) => p === palette[i]);
-    });
-    oldToNew[bi] = newPalette.length - 1;
-    oldToNew[bj] = newPalette.length - 1;
-    for (let k = 0; k < assignments.length; k++) assignments[k] = oldToNew[assignments[k]];
-    palette.length = 0;
-    palette.push(...newPalette);
-  }
-  return { palette: palette.map((p) => p.rgb), assignments };
+  const looksLikeCube = maxDist < NOT_A_CUBE_DISTANCE && gridConfident;
+  return { colorIndices, rgbs, looksLikeCube, gridConfident };
 }
 const FACE_SEQUENCE = ["F", "R", "B", "L", "U", "D"];
 const FACE_LABEL_HE = { U: "\u05E2\u05DC\u05D9\u05D5\u05E0\u05D4", R: "\u05D9\u05DE\u05E0\u05D9\u05EA", F: "\u05E7\u05D3\u05DE\u05D9\u05EA", D: "\u05EA\u05D7\u05EA\u05D5\u05E0\u05D4", L: "\u05E9\u05DE\u05D0\u05DC\u05D9\u05EA", B: "\u05D0\u05D7\u05D5\u05E8\u05D9\u05EA" };
@@ -2432,7 +2535,6 @@ function faceViewMatrix(face) {
   const n = FACE_NORMAL[face];
   return [r.slice(), u.slice(), n.slice()];
 }
-const COLOR_LETTERS = ["A", "B", "C", "D", "E", "F"];
 function PermissionScreen({ onGranted }) {
   const [state, setState] = useState("idle");
   const [errMsg, setErrMsg] = useState("");
@@ -2459,15 +2561,21 @@ function ScanScreen({ faceIdx, stream, rawCaptures, onCapture, onBack }) {
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
   const [ready, setReady] = useState(false);
+  const [notCubeWarning, setNotCubeWarning] = useState(false);
+  const [mirrored, setMirrored] = useState(false);
   const capturedColors = {};
   FACE_SEQUENCE.forEach((f) => {
-    if (rawCaptures[f]) capturedColors[f] = rawCaptures[f].map(rgbToCss);
+    if (rawCaptures[f]) capturedColors[f] = rawCaptures[f].map((idx) => CUBE_COLORS[idx].css);
   });
   useEffect(() => {
     setReady(false);
+    setNotCubeWarning(false);
     const video = videoRef.current;
     if (!video || !stream) return;
     video.srcObject = stream;
+    const track = stream.getVideoTracks()[0];
+    const settings = track && track.getSettings ? track.getSettings() : {};
+    setMirrored(settings.facingMode !== "environment");
     const onLoaded = () => {
       video.play();
       setReady(true);
@@ -2475,7 +2583,7 @@ function ScanScreen({ faceIdx, stream, rawCaptures, onCapture, onBack }) {
     video.addEventListener("loadedmetadata", onLoaded);
     if (video.readyState >= 1) onLoaded();
     return () => video.removeEventListener("loadedmetadata", onLoaded);
-  }, [stream]);
+  }, [stream, faceIdx]);
   const capture = () => {
     const video = videoRef.current;
     if (!video || !video.videoWidth) return;
@@ -2486,32 +2594,48 @@ function ScanScreen({ faceIdx, stream, rawCaptures, onCapture, onBack }) {
     canvas.width = size;
     canvas.height = size;
     const ctx = canvas.getContext("2d");
-    ctx.drawImage(video, sx, sy, size, size, 0, 0, size, size);
-    const imageData = ctx.getImageData(0, 0, size, size);
-    const cellSize = size / 3;
-    const radius = Math.max(4, Math.round(cellSize * 0.12));
-    const rgbs = [];
-    for (let row = 0; row < 3; row++) for (let col = 0; col < 3; col++) {
-      const cx = Math.round(cellSize * col + cellSize / 2);
-      const cy = Math.round(cellSize * row + cellSize / 2);
-      rgbs.push(sampleAverageColor(imageData, cx, cy, radius));
+    ctx.save();
+    if (mirrored) {
+      ctx.translate(size, 0);
+      ctx.scale(-1, 1);
     }
-    onCapture(face, rgbs);
+    ctx.drawImage(video, sx, sy, size, size, 0, 0, size, size);
+    ctx.restore();
+    const imageData = ctx.getImageData(0, 0, size, size);
+    const { colorIndices, looksLikeCube } = analyzeFaceCapture(imageData);
+    if (!looksLikeCube) {
+      setNotCubeWarning(true);
+      return;
+    }
+    setNotCubeWarning(false);
+    onCapture(face, colorIndices);
   };
-  return /* @__PURE__ */ React.createElement("div", { className: "screen scan-screen" }, /* @__PURE__ */ React.createElement("div", { className: "scan-header" }, /* @__PURE__ */ React.createElement("button", { className: "icon-btn", onClick: onBack, "aria-label": "\u05D7\u05D6\u05E8\u05D4" }, /* @__PURE__ */ React.createElement(ChevronRight, { size: 22 })), /* @__PURE__ */ React.createElement("div", { className: "scan-progress" }, FACE_SEQUENCE.map((f, i) => /* @__PURE__ */ React.createElement("div", { key: f, className: `dot ${i === faceIdx ? "dot-active" : ""} ${i < faceIdx ? "dot-done" : ""}` }))), /* @__PURE__ */ React.createElement("div", { style: { width: 38 } })), /* @__PURE__ */ React.createElement("h2", { className: "scan-title" }, "\u05E1\u05E8\u05D5\u05E7 \u05E4\u05D0\u05D4 ", faceIdx + 1, " \u05DE\u05EA\u05D5\u05DA 6: ", /* @__PURE__ */ React.createElement("span", { className: "accent" }, FACE_LABEL_HE[face])), /* @__PURE__ */ React.createElement("p", { className: "scan-guidance" }, FACE_GUIDANCE_HE[face]), /* @__PURE__ */ React.createElement("div", { className: "guide-cube-frame" }, /* @__PURE__ */ React.createElement(GuideCube3D, { targetFace: face, capturedColors })), /* @__PURE__ */ React.createElement("div", { className: "camera-wrap" }, /* @__PURE__ */ React.createElement("video", { ref: videoRef, className: "camera-video", playsInline: true, muted: true }), /* @__PURE__ */ React.createElement("div", { className: "grid-overlay" }, Array.from({ length: 9 }).map((_, i) => /* @__PURE__ */ React.createElement("div", { key: i, className: "grid-cell" }))), !ready && /* @__PURE__ */ React.createElement("div", { className: "camera-loading" }, "\u05E4\u05D5\u05EA\u05D7 \u05DE\u05E6\u05DC\u05DE\u05D4\u2026")), /* @__PURE__ */ React.createElement("button", { className: "capture-btn", onClick: capture, disabled: !ready }, /* @__PURE__ */ React.createElement(Camera, { size: 22 }), " \u05E6\u05DC\u05DD \u05E4\u05D0\u05D4 \u05D6\u05D5"), /* @__PURE__ */ React.createElement("canvas", { ref: canvasRef, style: { display: "none" } }));
+  return /* @__PURE__ */ React.createElement("div", { className: "screen scan-screen" }, /* @__PURE__ */ React.createElement("div", { className: "scan-header" }, /* @__PURE__ */ React.createElement("button", { className: "icon-btn", onClick: onBack, "aria-label": "\u05D7\u05D6\u05E8\u05D4" }, /* @__PURE__ */ React.createElement(ChevronRight, { size: 22 })), /* @__PURE__ */ React.createElement("div", { className: "scan-progress" }, FACE_SEQUENCE.map((f, i) => /* @__PURE__ */ React.createElement("div", { key: f, className: `dot ${i === faceIdx ? "dot-active" : ""} ${i < faceIdx ? "dot-done" : ""}` }))), /* @__PURE__ */ React.createElement("div", { style: { width: 38 } })), /* @__PURE__ */ React.createElement("h2", { className: "scan-title" }, "\u05E1\u05E8\u05D5\u05E7 \u05E4\u05D0\u05D4 ", faceIdx + 1, " \u05DE\u05EA\u05D5\u05DA 6: ", /* @__PURE__ */ React.createElement("span", { className: "accent" }, FACE_LABEL_HE[face])), /* @__PURE__ */ React.createElement("p", { className: "scan-guidance" }, FACE_GUIDANCE_HE[face]), /* @__PURE__ */ React.createElement("div", { className: "guide-cube-frame" }, /* @__PURE__ */ React.createElement(GuideCube3D, { targetFace: face, capturedColors })), /* @__PURE__ */ React.createElement("div", { className: "camera-wrap" }, /* @__PURE__ */ React.createElement("video", { ref: videoRef, className: "camera-video", style: mirrored ? { transform: "scaleX(-1)" } : void 0, playsInline: true, muted: true }), /* @__PURE__ */ React.createElement("div", { className: "frame-outline" }), !ready && /* @__PURE__ */ React.createElement("div", { className: "camera-loading" }, "\u05E4\u05D5\u05EA\u05D7 \u05DE\u05E6\u05DC\u05DE\u05D4\u2026")), notCubeWarning && /* @__PURE__ */ React.createElement("div", { className: "error-item", style: { marginBottom: 14 } }, /* @__PURE__ */ React.createElement("span", { className: "error-dot" }), /* @__PURE__ */ React.createElement("p", null, "\u05D6\u05D4 \u05DC\u05D0 \u05E0\u05E8\u05D0\u05D4 \u05DB\u05DE\u05D5 \u05E4\u05D0\u05D4 \u05E9\u05DC \u05E7\u05D5\u05D1\u05D9\u05D9\u05D4 \u05D4\u05D5\u05E0\u05D2\u05E8\u05D9\u05EA - \u05D5\u05D3\u05D0 \u05E9\u05D4\u05E4\u05D0\u05D4 \u05DE\u05DB\u05E1\u05D4 \u05D0\u05EA \u05DB\u05DC \u05D4\u05E8\u05D9\u05D1\u05D5\u05E2, \u05E9\u05D4\u05EA\u05D0\u05D5\u05E8\u05D4 \u05D8\u05D5\u05D1\u05D4, \u05D5\u05E0\u05E1\u05D4 \u05DC\u05E6\u05DC\u05DD \u05E9\u05D5\u05D1.")), /* @__PURE__ */ React.createElement("button", { className: "capture-btn", onClick: capture, disabled: !ready }, /* @__PURE__ */ React.createElement(Camera, { size: 22 }), " \u05E6\u05DC\u05DD \u05E4\u05D0\u05D4 \u05D6\u05D5"), /* @__PURE__ */ React.createElement("canvas", { ref: canvasRef, style: { display: "none" } }));
 }
-function ReviewScreen({ rawCaptures, palette, assignmentsByFace, onChangeCell, onConfirm, onRescanFace, faceOrderIdx, setFaceOrderIdx }) {
+function ReviewScreen({ rawCaptures, onChangeCell, onConfirm, onRescanFace, faceOrderIdx, setFaceOrderIdx }) {
   const face = FACE_SEQUENCE[faceOrderIdx];
-  const cells = assignmentsByFace[face] || [];
-  return /* @__PURE__ */ React.createElement("div", { className: "screen review-screen" }, /* @__PURE__ */ React.createElement("h2", { className: "scan-title" }, "\u05D1\u05D3\u05D9\u05E7\u05EA \u05E6\u05D1\u05E2\u05D9\u05DD: ", /* @__PURE__ */ React.createElement("span", { className: "accent" }, FACE_LABEL_HE[face])), /* @__PURE__ */ React.createElement("p", { className: "scan-guidance" }, "\u05D0\u05DD \u05E6\u05D1\u05E2 \u05D6\u05D5\u05D4\u05D4 \u05DC\u05D0 \u05E0\u05DB\u05D5\u05DF, \u05D4\u05E7\u05E9 \u05E2\u05DC\u05D9\u05D5 \u05DB\u05D3\u05D9 \u05DC\u05E9\u05E0\u05D5\u05EA."), /* @__PURE__ */ React.createElement("div", { className: "face-tabs" }, FACE_SEQUENCE.map((f, i) => /* @__PURE__ */ React.createElement("button", { key: f, className: `face-tab ${i === faceOrderIdx ? "face-tab-active" : ""}`, onClick: () => setFaceOrderIdx(i) }, FACE_LABEL_HE[f]))), /* @__PURE__ */ React.createElement("div", { className: "review-grid" }, cells.map((paletteIdx, i) => /* @__PURE__ */ React.createElement(
+  const cells = rawCaptures[face] || [];
+  const [paintIdx, setPaintIdx] = useState(0);
+  const counts = new Array(CUBE_COLORS.length).fill(0);
+  FACE_SEQUENCE.forEach((f) => (rawCaptures[f] || []).forEach((idx) => counts[idx]++));
+  return /* @__PURE__ */ React.createElement("div", { className: "screen review-screen" }, /* @__PURE__ */ React.createElement("h2", { className: "scan-title" }, "\u05D1\u05D3\u05D9\u05E7\u05EA \u05E6\u05D1\u05E2\u05D9\u05DD: ", /* @__PURE__ */ React.createElement("span", { className: "accent" }, FACE_LABEL_HE[face])), /* @__PURE__ */ React.createElement("p", { className: "scan-guidance" }, "\u05D2\u05E8\u05D5\u05E8 \u05DB\u05D3\u05D9 \u05DC\u05E1\u05D5\u05D1\u05D1 \u05D5\u05DC\u05D1\u05D3\u05D5\u05E7 \u05D0\u05EA \u05DB\u05DC \u05D4\u05E7\u05D5\u05D1\u05D9\u05D9\u05D4. \u05D0\u05DD \u05E6\u05D1\u05E2 \u05DC\u05D0 \u05E0\u05DB\u05D5\u05DF: \u05D1\u05D7\u05E8 \u05D0\u05EA \u05D4\u05E6\u05D1\u05E2 \u05D4\u05E0\u05DB\u05D5\u05DF \u05DC\u05DE\u05D8\u05D4, \u05D5\u05D0\u05D6 \u05D4\u05E7\u05E9 \u05E2\u05DC \u05D4\u05DE\u05E9\u05D1\u05E6\u05EA \u05E9\u05E6\u05E8\u05D9\u05DA \u05DC\u05EA\u05E7\u05DF."), /* @__PURE__ */ React.createElement("div", { className: "inspect-cube-frame" }, /* @__PURE__ */ React.createElement(InspectCube3D, { rawCaptures })), /* @__PURE__ */ React.createElement("div", { className: "face-tabs" }, FACE_SEQUENCE.map((f, i) => /* @__PURE__ */ React.createElement("button", { key: f, className: `face-tab ${i === faceOrderIdx ? "face-tab-active" : ""}`, onClick: () => setFaceOrderIdx(i) }, FACE_LABEL_HE[f]))), /* @__PURE__ */ React.createElement("div", { className: "review-grid" }, cells.map((colorIdx, i) => /* @__PURE__ */ React.createElement(
     "button",
     {
       key: i,
       className: "review-cell",
-      style: { background: rgbToCss(palette[paletteIdx] || [200, 200, 200]) },
-      onClick: () => onChangeCell(face, i)
+      style: { background: CUBE_COLORS[colorIdx].css },
+      onClick: () => onChangeCell(face, i, paintIdx)
     }
-  ))), /* @__PURE__ */ React.createElement("div", { className: "review-actions" }, /* @__PURE__ */ React.createElement("button", { className: "secondary-btn", onClick: () => onRescanFace(faceOrderIdx) }, /* @__PURE__ */ React.createElement(RefreshCw, { size: 18 }), " \u05E1\u05E8\u05D5\u05E7 \u05E4\u05D0\u05D4 \u05D6\u05D5 \u05DE\u05D7\u05D3\u05E9"), faceOrderIdx < 5 ? /* @__PURE__ */ React.createElement("button", { className: "primary-btn", onClick: () => setFaceOrderIdx(faceOrderIdx + 1) }, "\u05D4\u05E4\u05D0\u05D4 \u05D4\u05D1\u05D0\u05D4 ", /* @__PURE__ */ React.createElement(ChevronLeft, { size: 18 })) : /* @__PURE__ */ React.createElement("button", { className: "primary-btn", onClick: onConfirm }, /* @__PURE__ */ React.createElement(Check, { size: 18 }), " \u05D1\u05D3\u05D5\u05E7 \u05EA\u05E7\u05D9\u05E0\u05D5\u05EA")));
+  ))), /* @__PURE__ */ React.createElement("p", { className: "paint-label" }, "\u05E6\u05D1\u05E2 \u05DC\u05EA\u05D9\u05E7\u05D5\u05DF:"), /* @__PURE__ */ React.createElement("div", { className: "paint-palette" }, CUBE_COLORS.map((c, i) => /* @__PURE__ */ React.createElement(
+    "button",
+    {
+      key: c.key,
+      className: `paint-swatch ${i === paintIdx ? "paint-swatch-active" : ""}`,
+      style: { background: c.css },
+      onClick: () => setPaintIdx(i)
+    },
+    /* @__PURE__ */ React.createElement("span", { className: `paint-count ${counts[i] !== 9 ? "paint-count-bad" : ""}` }, counts[i])
+  ))), /* @__PURE__ */ React.createElement("p", { className: "paint-hint" }, "\u05DB\u05DC \u05E6\u05D1\u05E2 \u05D0\u05DE\u05D5\u05E8 \u05DC\u05D4\u05D5\u05E4\u05D9\u05E2 \u05D1\u05D3\u05D9\u05D5\u05E7 9 \u05E4\u05E2\u05DE\u05D9\u05DD \u05D1\u05E1\u05DA \u05D4\u05DB\u05DC \u05D1\u05E7\u05D5\u05D1\u05D9\u05D9\u05D4 - \u05D4\u05DE\u05E1\u05E4\u05E8 \u05D4\u05D0\u05D3\u05D5\u05DD \u05DE\u05E1\u05DE\u05DF \u05D7\u05D5\u05E1\u05E8 \u05D4\u05EA\u05D0\u05DE\u05D4."), /* @__PURE__ */ React.createElement("div", { className: "review-actions" }, /* @__PURE__ */ React.createElement("button", { className: "secondary-btn", onClick: () => onRescanFace(faceOrderIdx) }, /* @__PURE__ */ React.createElement(RefreshCw, { size: 18 }), " \u05E1\u05E8\u05D5\u05E7 \u05E4\u05D0\u05D4 \u05D6\u05D5 \u05DE\u05D7\u05D3\u05E9"), faceOrderIdx < 5 ? /* @__PURE__ */ React.createElement("button", { className: "primary-btn", onClick: () => setFaceOrderIdx(faceOrderIdx + 1) }, "\u05D4\u05E4\u05D0\u05D4 \u05D4\u05D1\u05D0\u05D4 ", /* @__PURE__ */ React.createElement(ChevronLeft, { size: 18 })) : /* @__PURE__ */ React.createElement("button", { className: "primary-btn", onClick: onConfirm }, /* @__PURE__ */ React.createElement(Check, { size: 18 }), " \u05D1\u05D3\u05D5\u05E7 \u05EA\u05E7\u05D9\u05E0\u05D5\u05EA")));
 }
 function ValidationErrorScreen({ result, onRescan, onBack }) {
   return /* @__PURE__ */ React.createElement("div", { className: "screen" }, /* @__PURE__ */ React.createElement("div", { className: "error-hero" }, /* @__PURE__ */ React.createElement(AlertTriangle, { size: 40, color: "#c0392b" }), /* @__PURE__ */ React.createElement("h2", null, "\u05E0\u05DE\u05E6\u05D0\u05D4 \u05D1\u05E2\u05D9\u05D4 \u05D1\u05E1\u05E8\u05D9\u05E7\u05D4")), /* @__PURE__ */ React.createElement("div", { className: "error-list" }, result.errors.map((e, i) => /* @__PURE__ */ React.createElement("div", { key: i, className: "error-item" }, /* @__PURE__ */ React.createElement("span", { className: "error-dot" }), /* @__PURE__ */ React.createElement("p", null, e.message)))), /* @__PURE__ */ React.createElement("p", { className: "error-hint" }, "\u05D1\u05D3\u05D5\u05E7 \u05E9\u05D5\u05D1 \u05D0\u05EA \u05D4\u05E4\u05D0\u05D5\u05EA \u05E9\u05E1\u05E8\u05E7\u05EA - \u05D1\u05DE\u05D9\u05D5\u05D7\u05D3 \u05E9\u05D4\u05D7\u05D6\u05E7\u05EA \u05D0\u05EA \u05D4\u05E7\u05D5\u05D1\u05D9\u05D9\u05D4 \u05D1\u05D0\u05D5\u05EA\u05D5 \u05DB\u05D9\u05D5\u05D5\u05DF \u05DB\u05E4\u05D9 \u05E9\u05DE\u05EA\u05D5\u05D0\u05E8 \u05D1\u05D4\u05E0\u05D7\u05D9\u05D5\u05EA, \u05D5\u05E9\u05DB\u05DC \u05DE\u05D3\u05D1\u05E7\u05D4 \u05D6\u05D5\u05D4\u05EA\u05D4 \u05D1\u05E6\u05D1\u05E2 \u05D4\u05E0\u05DB\u05D5\u05DF."), /* @__PURE__ */ React.createElement("button", { className: "primary-btn full", onClick: onBack }, /* @__PURE__ */ React.createElement(RefreshCw, { size: 18 }), " \u05D7\u05D6\u05E8\u05D4 \u05DC\u05D1\u05D3\u05D9\u05E7\u05EA \u05D4\u05E6\u05D1\u05E2\u05D9\u05DD"));
@@ -2845,6 +2969,107 @@ function GuideCube3D({ targetFace, capturedColors }) {
   }, [capturedColors]);
   return /* @__PURE__ */ React.createElement("div", { ref: mountRef, className: "guide-cube-mount" });
 }
+function InspectCube3D({ rawCaptures }) {
+  const mountRef = useRef(null);
+  const stateRef = useRef({ renderer: null, camera: null, scene: null, meshById: {}, refCube: null });
+  const orbitRef = useRef({ az: 0.6, el: 0.45, dragging: false, lastX: 0, lastY: 0 });
+  useEffect(() => {
+    const mount = mountRef.current;
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(36, 1, 0.1, 100);
+    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    mount.appendChild(renderer.domElement);
+    scene.add(new THREE.AmbientLight(16777215, 0.8));
+    const d1 = new THREE.DirectionalLight(16777215, 0.5);
+    d1.position.set(4, 6, 5);
+    scene.add(d1);
+    const d2 = new THREE.DirectionalLight(16777215, 0.25);
+    d2.position.set(-4, -2, -3);
+    scene.add(d2);
+    const refColorMap = { U: "U", D: "D", F: "F", B: "B", L: "L", R: "R" };
+    const refCube = makeSolvedCube(refColorMap);
+    const meshById = {};
+    refCube.forEach((cubie) => {
+      const group = buildGuideCubieMesh(cubie);
+      group.position.set(cubie.pos[0] * CUBIE_GAP, cubie.pos[1] * CUBIE_GAP, cubie.pos[2] * CUBIE_GAP);
+      scene.add(group);
+      meshById[cubie.id] = group;
+    });
+    Object.assign(stateRef.current, { renderer, camera, scene, meshById, refCube });
+    function resize() {
+      const w = mount.clientWidth, h = mount.clientHeight;
+      renderer.setSize(w, h);
+      camera.aspect = w / h;
+      camera.updateProjectionMatrix();
+    }
+    resize();
+    const ro = new ResizeObserver(resize);
+    ro.observe(mount);
+    function updateCam() {
+      const { az, el: el2 } = orbitRef.current;
+      const dist = 6.6;
+      camera.position.set(dist * Math.cos(el2) * Math.sin(az), dist * Math.sin(el2), dist * Math.cos(el2) * Math.cos(az));
+      camera.lookAt(0, 0, 0);
+    }
+    updateCam();
+    function onDown(e) {
+      orbitRef.current.dragging = true;
+      orbitRef.current.lastX = e.clientX;
+      orbitRef.current.lastY = e.clientY;
+    }
+    function onMove(e) {
+      if (!orbitRef.current.dragging) return;
+      const dx = e.clientX - orbitRef.current.lastX, dy = e.clientY - orbitRef.current.lastY;
+      orbitRef.current.lastX = e.clientX;
+      orbitRef.current.lastY = e.clientY;
+      orbitRef.current.az -= dx * 8e-3;
+      orbitRef.current.el = Math.max(-1.2, Math.min(1.2, orbitRef.current.el + dy * 8e-3));
+      updateCam();
+    }
+    function onUp() {
+      orbitRef.current.dragging = false;
+    }
+    const el = renderer.domElement;
+    el.style.touchAction = "none";
+    el.addEventListener("pointerdown", onDown);
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+    let raf;
+    function tick() {
+      renderer.render(scene, camera);
+      raf = requestAnimationFrame(tick);
+    }
+    tick();
+    return () => {
+      cancelAnimationFrame(raf);
+      ro.disconnect();
+      el.removeEventListener("pointerdown", onDown);
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      renderer.dispose();
+      if (mount.contains(renderer.domElement)) mount.removeChild(renderer.domElement);
+    };
+  }, []);
+  useEffect(() => {
+    const st = stateRef.current;
+    if (!st.refCube) return;
+    FACE_SEQUENCE.forEach((face) => {
+      const colorIdxs = rawCaptures[face];
+      if (!colorIdxs) return;
+      const { axis, dir } = FACE_INFO[face];
+      const positions = faceLayerPositions(face);
+      positions.forEach((pos, i) => {
+        const cubie = st.refCube.find((c) => c.pos[0] === pos[0] && c.pos[1] === pos[1] && c.pos[2] === pos[2]);
+        const group = st.meshById[cubie.id];
+        const mesh = group.userData.mesh;
+        const matIdx = MAT_INDEX[`${axis}${dir}`];
+        mesh.material[matIdx].color.set(CUBE_COLORS[colorIdxs[i]].css);
+      });
+    });
+  }, [rawCaptures]);
+  return /* @__PURE__ */ React.createElement("div", { ref: mountRef, className: "guide-cube-mount" });
+}
 const STYLES = `
 @import url('https://fonts.googleapis.com/css2?family=Heebo:wght@400;500;600;700;800&display=swap');
 
@@ -2966,11 +3191,10 @@ html, body { margin:0; padding:0; }
   position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center;
   color:#eee; gap:10px; text-align:center; padding:20px; font-size:14px;
 }
-.grid-overlay {
-  position:absolute; inset:8%; display:grid; grid-template-columns:repeat(3,1fr); grid-template-rows:repeat(3,1fr);
+.frame-outline {
+  position:absolute; inset:6%; border:3px dashed rgba(255,255,255,0.65); border-radius:18px;
   pointer-events:none;
 }
-.grid-cell { border: 1.5px solid rgba(255,255,255,0.55); }
 
 .capture-btn {
   background:#dce2f8; color:#24304f; width:100%; padding:16px; font-size:17px;
@@ -2979,6 +3203,31 @@ html, body { margin:0; padding:0; }
 .capture-btn:disabled { opacity:0.5; }
 
 /* ---------- review ---------- */
+.inspect-cube-frame {
+  width:100%; height:32vh; max-height:250px; border-radius:22px; overflow:hidden;
+  background: radial-gradient(circle at 50% 40%, #f2f3f7, #dcdce2);
+  margin-bottom:14px; touch-action:none;
+}
+
+.paint-label { font-size:13px; color:#5a5a6a; margin:2px 0 8px; }
+.paint-palette { display:flex; gap:10px; margin-bottom:8px; }
+.paint-swatch {
+  position:relative; flex:1; aspect-ratio:1/1; border-radius:14px; border:3px solid transparent;
+  cursor:pointer; box-shadow: inset 0 0 0 1px rgba(0,0,0,0.12);
+}
+.paint-swatch-active { border-color:#4a5b9e; transform:scale(1.08); }
+.paint-count {
+  position:absolute; bottom:3px; left:50%; transform:translateX(-50%);
+  background:rgba(255,255,255,0.9); color:#23232b; border-radius:8px; font-size:11px; font-weight:700;
+  padding:1px 6px; line-height:1.4;
+}
+.paint-count-bad { background:#ffe0e0; color:#c0392b; }
+.paint-hint { font-size:12px; color:#8a8a98; margin:0 0 18px; line-height:1.5; }
+
+.color-legend { display:flex; flex-wrap:wrap; gap:10px; margin-bottom:16px; }
+.legend-item { display:flex; align-items:center; gap:6px; font-size:12.5px; color:#5a5a6a; }
+.legend-swatch { width:16px; height:16px; border-radius:5px; box-shadow: inset 0 0 0 1px rgba(0,0,0,0.12); }
+
 .face-tabs { display:flex; gap:6px; overflow-x:auto; margin-bottom:16px; padding-bottom:4px; }
 .face-tab {
   flex-shrink:0; border:none; background:#eeeef1; color:#5a5a6a; padding:8px 14px; border-radius:12px;
@@ -3099,8 +3348,6 @@ function App() {
   const [cameraStream, setCameraStream] = useState(null);
   const [rawCaptures, setRawCaptures] = useState({});
   const [reviewFaceIdx, setReviewFaceIdx] = useState(0);
-  const [assignmentsByFace, setAssignmentsByFace] = useState({});
-  const [palette, setPalette] = useState([]);
   const [validationResult, setValidationResult] = useState(null);
   const [solverError, setSolverError] = useState(null);
   const [solution, setSolution] = useState([]);
@@ -3122,34 +3369,20 @@ function App() {
     }, 10);
     return () => clearTimeout(id);
   }, []);
-  const handleCapture = (face, rgbs) => {
-    const next = { ...rawCaptures, [face]: rgbs };
+  const handleCapture = (face, colorIndices) => {
+    const next = { ...rawCaptures, [face]: colorIndices };
     setRawCaptures(next);
     if (faceIdx < 5) {
       setFaceIdx(faceIdx + 1);
     } else {
-      buildReview(next);
+      setReviewFaceIdx(0);
+      setScreen("review");
     }
   };
-  const buildReview = (captures) => {
-    const samples = [];
-    FACE_SEQUENCE.forEach((f) => (captures[f] || []).forEach((rgb, i) => samples.push({ face: f, cellIdx: i, rgb })));
-    const { palette: pal, assignments } = classifyPalette(samples);
-    const byFace = {};
-    let k = 0;
-    FACE_SEQUENCE.forEach((f) => {
-      byFace[f] = assignments.slice(k, k + 9);
-      k += 9;
-    });
-    setPalette(pal);
-    setAssignmentsByFace(byFace);
-    setReviewFaceIdx(0);
-    setScreen("review");
-  };
   const handleChangeCell = (face, cellIdx) => {
-    setAssignmentsByFace((prev) => {
+    setRawCaptures((prev) => {
       const arr = prev[face].slice();
-      arr[cellIdx] = (arr[cellIdx] + 1) % palette.length;
+      arr[cellIdx] = (arr[cellIdx] + 1) % CUBE_COLORS.length;
       return { ...prev, [face]: arr };
     });
   };
@@ -3160,7 +3393,7 @@ function App() {
   const runValidationAndSolve = () => {
     let facelet = "";
     FACE_ORDER.forEach((f) => {
-      assignmentsByFace[f].forEach((pIdx) => {
+      rawCaptures[f].forEach((pIdx) => {
         facelet += COLOR_LETTERS[pIdx];
       });
     });
@@ -3176,7 +3409,7 @@ function App() {
         const { solution: sol, geoCube } = solveFromScan(facelet);
         const withDisplay = geoCube.map((c) => ({
           ...c,
-          stickers: c.stickers.map((s) => ({ ...s, displayColor: rgbToCss(palette[COLOR_LETTERS.indexOf(s.color)] || [120, 120, 120]) }))
+          stickers: c.stickers.map((s) => ({ ...s, displayColor: CUBE_COLORS[COLOR_LETTERS.indexOf(s.color)].css }))
         }));
         setSolution(sol);
         setDisplayCube(withDisplay);
@@ -3197,7 +3430,6 @@ function App() {
     setScreen("intro");
     setFaceIdx(0);
     setRawCaptures({});
-    setAssignmentsByFace({});
     setValidationResult(null);
     setSolution([]);
     setDisplayCube(null);
@@ -3221,8 +3453,6 @@ function App() {
     ReviewScreen,
     {
       rawCaptures,
-      palette,
-      assignmentsByFace,
       onChangeCell: handleChangeCell,
       onConfirm: runValidationAndSolve,
       onRescanFace: handleRescanFace,
