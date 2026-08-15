@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="he" dir="rtl">
 <head>
@@ -2385,54 +2384,22 @@ function hueDist(h1, h2) {
 const CUBE_COLORS_HSV = CUBE_COLORS.map((c) => rgbToHsv(...c.rgb));
 const WHITE_IDX = 0;
 function classifyToFixedPalette(rgb) {
-  const [r, g, b] = rgb;
-  const [h, s, v] = rgbToHsv(r, g, b);
-  const maxC = Math.max(r, g, b), minC = Math.min(r, g, b);
-  const spread = maxC - minC;
-  // White: very low chroma relative to brightness. Uses absolute RGB spread
-  // rather than HSV-saturation alone, which is more robust for bright cubes.
-  if (spread < 40 && v > 0.55) {
-    return { index: WHITE_IDX, distance: (1 - v) * 120 + spread * 0.6 };
-  }
-  if (spread < 60 && v > 0.75 && s < 0.28) {
-    return { index: WHITE_IDX, distance: (1 - v) * 120 + spread * 0.6 };
-  }
-  // Direct hue-band classification for cube colors (order-independent).
-  // Yellow: hue ~40-70, distinctly bright with strong R+G, low B.
-  if (h >= 38 && h <= 72 && r > 140 && g > 130 && b < Math.min(r, g) * 0.75) {
-    return { index: 1, distance: hueDist(h, 55) };
-  }
-  // Orange: hue ~15-38, R clearly dominant, G noticeably > B.
-  if (h >= 12 && h < 38 && r > 150 && g > 60 && r > g * 1.25 && g > b * 1.2) {
-    return { index: 3, distance: hueDist(h, 28) };
-  }
-  // Red: hue near 0/360 or low-hue with G small vs R.
-  if ((h < 15 || h > 345) && r > 90 && r > g * 1.6 && r > b * 1.4) {
-    return { index: 2, distance: Math.min(h, 360 - h) };
-  }
-  // Green: hue ~90-170.
-  if (h >= 85 && h <= 175 && g > r * 1.05 && g > b * 0.9) {
-    return { index: 5, distance: hueDist(h, 130) };
-  }
-  // Blue: hue ~185-260.
-  if (h >= 180 && h <= 265 && b > r && b > g * 0.85) {
-    return { index: 4, distance: hueDist(h, 220) };
-  }
-  // Fallback: nearest by hue among non-white, with red/orange tie-break.
+  const [h, s, v] = rgbToHsv(rgb[0], rgb[1], rgb[2]);
   let best = -1, bestD = Infinity;
   CUBE_COLORS.forEach((c, i) => {
-    if (i === WHITE_IDX) return;
-    const d = hueDist(h, CUBE_COLORS_HSV[i][0]);
-    if (d < bestD) { bestD = d; best = i; }
+    const [rh, rs, rv] = CUBE_COLORS_HSV[i];
+    const hueWeight = Math.min(s, rs);
+    const dh = hueDist(h, rh) / 180 * hueWeight;
+    const ds = Math.abs(s - rs);
+    const dv = Math.abs(v - rv);
+    const d = dh * 3.2 + ds * 1.4 + dv * 1.1;
+    if (d < bestD) {
+      bestD = d;
+      best = i;
+    }
   });
-  if (best === 2 || best === 3) {
-    // Orange has more green in it than red.
-    best = (g > 90 && r > g * 1.3 && g > b * 1.3) ? 3 : 2;
-  }
-  const distance = bestD * 1.6 + Math.max(0, 0.30 - s) * 120 + Math.max(0, 0.22 - v) * 120;
-  return { index: best, distance };
+  return { index: best, distance: bestD * 130 };
 }
-
 function toGrayscale(imageData) {
   const { data, width, height } = imageData;
   const gray = new Float32Array(width * height);
@@ -2471,38 +2438,59 @@ function findTwoMinima(profile, loFrac, hiFrac) {
   }
   return [minInBand(band1), minInBand(band2)];
 }
-function detectGrid(imageData) {
-  const { width: size } = imageData;
-  const gray = toGrayscale(imageData);
+function scoreGridInRegion(gray, width, height, x0, y0, size) {
+  const margin = Math.round(size * 0.12);
   const colProfile = new Float32Array(size);
   const rowProfile = new Float32Array(size);
-  const margin = Math.round(size * 0.1);
   for (let x = 0; x < size; x++) {
     let sum = 0, n = 0;
-    for (let y = margin; y < size - margin; y++) {
-      sum += gray[y * size + x];
-      n++;
-    }
-    colProfile[x] = sum / n;
+    for (let y = margin; y < size - margin; y += 2) { sum += gray[(y0 + y) * width + (x0 + x)]; n++; }
+    colProfile[x] = n ? sum / n : 0;
   }
   for (let y = 0; y < size; y++) {
     let sum = 0, n = 0;
-    for (let x = margin; x < size - margin; x++) {
-      sum += gray[y * size + x];
-      n++;
-    }
-    rowProfile[y] = sum / n;
+    for (let x = margin; x < size - margin; x += 2) { sum += gray[(y0 + y) * width + (x0 + x)]; n++; }
+    rowProfile[y] = n ? sum / n : 0;
   }
-  const colSmooth = smooth1D(colProfile, Math.round(size * 0.01) + 1);
-  const rowSmooth = smooth1D(rowProfile, Math.round(size * 0.01) + 1);
-  const avgBrightness = colSmooth.reduce((a, b) => a + b, 0) / size;
-  const [c1, c2] = findTwoMinima(colSmooth);
-  const [r1, r2] = findTwoMinima(rowSmooth);
-  const colConfident = c1.val < avgBrightness * 0.6 && c2.val < avgBrightness * 0.6 && c2.pos - c1.pos > size * 0.08;
-  const rowConfident = r1.val < avgBrightness * 0.6 && r2.val < avgBrightness * 0.6 && r2.pos - r1.pos > size * 0.08;
-  const colBoundaries = colConfident ? [0, c1.pos, c2.pos, size] : [0, size / 3, 2 * size / 3, size];
-  const rowBoundaries = rowConfident ? [0, r1.pos, r2.pos, size] : [0, size / 3, 2 * size / 3, size];
-  return { colBoundaries, rowBoundaries, confident: colConfident && rowConfident };
+  function findMinima(profile) {
+    const n = profile.length;
+    const band1 = [Math.floor(n * 0.22), Math.floor(n * 0.45)];
+    const band2 = [Math.floor(n * 0.55), Math.floor(n * 0.78)];
+    function minIn([a, b]) { let best = a, bv = Infinity; for (let i = a; i < b; i++) if (profile[i] < bv) { bv = profile[i]; best = i; } return { pos: best, val: bv }; }
+    return [minIn(band1), minIn(band2)];
+  }
+  const avg = colProfile.reduce((a, b) => a + b, 0) / size;
+  const [c1, c2] = findMinima(colProfile);
+  const [r1, r2] = findMinima(rowProfile);
+  if (avg < 1) return { score: 0, colBoundaries: null, rowBoundaries: null };
+  const dScore = (avg - Math.max(c1.val, c2.val, r1.val, r2.val)) / avg;
+  const colSpacingErr = Math.abs(c1.pos / size - 1 / 3) + Math.abs(c2.pos / size - 2 / 3);
+  const rowSpacingErr = Math.abs(r1.pos / size - 1 / 3) + Math.abs(r2.pos / size - 2 / 3);
+  const spacingScore = Math.max(0, 1 - (colSpacingErr + rowSpacingErr) * 2.2);
+  const score = Math.max(0, dScore) * spacingScore;
+  return { score, colBoundaries: [0, c1.pos, c2.pos, size], rowBoundaries: [0, r1.pos, r2.pos, size] };
+}
+// Finds where in the photo the cube actually is (as opposed to background), by searching for the
+// physical signature of a cube face - a 3x3 grid of roughly evenly-spaced dark gaps - at several
+// candidate sizes, all centered on the frame (matching the on-screen framing guide). This is far
+// more reliable than classifying by raw color, since ordinary backgrounds (skin, wood, walls) can
+// easily share a hue with one of the six cube colors, but essentially never form a clean grid.
+const CUBE_REGION_CONFIDENCE_MIN = 0.32;
+function detectCubeRegion(imageData) {
+  const { width, height } = imageData;
+  const gray = toGrayscale(imageData);
+  const frameSize = Math.min(width, height);
+  const cx = width / 2, cy = height / 2;
+  let best = null;
+  for (let frac = 1; frac >= 0.45; frac -= 0.05) {
+    const size = Math.round(frameSize * frac);
+    const x0 = Math.round(cx - size / 2), y0 = Math.round(cy - size / 2);
+    if (x0 < 0 || y0 < 0 || x0 + size > width || y0 + size > height) continue;
+    const result = scoreGridInRegion(gray, width, height, x0, y0, size);
+    if (!best || result.score > best.score) best = { ...result, x0, y0, size };
+  }
+  if (!best || best.score < CUBE_REGION_CONFIDENCE_MIN) return { found: false };
+  return { found: true, x0: best.x0, y0: best.y0, size: best.size, colBoundaries: best.colBoundaries.map((v) => v + best.x0), rowBoundaries: best.rowBoundaries.map((v) => v + best.y0), score: best.score };
 }
 function sampleAverageColor(imageData, cx, cy, radius) {
   const { data, width, height } = imageData;
@@ -2533,10 +2521,13 @@ function sampleCellRobust(imageData, x0, x1, y0, y1) {
   const avgDistance = classified.filter((c, i) => classified[i].index === winner).reduce((a, c) => a + c.distance, 0) / agreeing.length;
   return { index: winner, rgb: avgRgb, distance: avgDistance, agreement: agreeing.length / samples.length };
 }
-const NOT_A_CUBE_DISTANCE = 105;
+const NOT_A_CUBE_DISTANCE = 130;
 function analyzeFaceCapture(imageData) {
-  const size = imageData.width;
-  const { colBoundaries, rowBoundaries, confident: gridConfident } = detectGrid(imageData);
+  const region = detectCubeRegion(imageData);
+  if (!region.found) {
+    return { colorIndices: null, rgbs: null, looksLikeCube: false, reason: "no-cube-found" };
+  }
+  const { colBoundaries, rowBoundaries } = region;
   const colorIndices = [];
   const rgbs = [];
   const distances = [];
@@ -2549,8 +2540,8 @@ function analyzeFaceCapture(imageData) {
     distances.push(distance);
   }
   const badCells = distances.filter((d) => d > NOT_A_CUBE_DISTANCE).length;
-  const looksLikeCube = badCells <= 2;
-  return { colorIndices, rgbs, looksLikeCube, gridConfident };
+  const looksLikeCube = badCells <= 4;
+  return { colorIndices, rgbs, looksLikeCube, reason: looksLikeCube ? null : "bad-colors", region };
 }
 const FACE_SEQUENCE = ["F", "R", "B", "L", "U", "D"];
 const FACE_LABEL_HE = { U: "\u05E2\u05DC\u05D9\u05D5\u05E0\u05D4", R: "\u05D9\u05DE\u05E0\u05D9\u05EA", F: "\u05E7\u05D3\u05DE\u05D9\u05EA", D: "\u05EA\u05D7\u05EA\u05D5\u05E0\u05D4", L: "\u05E9\u05DE\u05D0\u05DC\u05D9\u05EA", B: "\u05D0\u05D7\u05D5\u05E8\u05D9\u05EA" };
@@ -2570,991 +2561,40 @@ function faceViewMatrix(face) {
 }
 function PermissionScreen({ onGranted }) {
   const [state, setState] = useState("idle");
-  const [errMsg, setErrMsg] = useState("");
+  const [errInfo, setErrInfo] = useState(null); // { name, message }
+  const [attempt, setAttempt] = useState(0);
   const insecureContext = !window.isSecureContext;
   const noMediaApi = !(navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
   const requestCamera = () => {
     setState("requesting");
+    setErrInfo(null);
     navigator.mediaDevices.getUserMedia({
       video: { facingMode: { ideal: "environment" }, width: { ideal: 1280 }, height: { ideal: 1280 } }
     }).then((stream) => {
       onGranted(stream);
     }).catch((err) => {
       setState("denied");
-      setErrMsg(err && err.message ? err.message : "\u05D4\u05D2\u05D9\u05E9\u05D4 \u05DC\u05DE\u05E6\u05DC\u05DE\u05D4 \u05E0\u05D3\u05D7\u05EA\u05D4");
+      setAttempt((a) => a + 1);
+      setErrInfo({ name: err && err.name ? err.name : "Unknown", message: err && err.message ? err.message : "" });
     });
   };
   if (insecureContext || noMediaApi) {
     return /* @__PURE__ */ React.createElement("div", { className: "screen intro-screen" }, /* @__PURE__ */ React.createElement("div", { className: "intro-icon" }, /* @__PURE__ */ React.createElement(AlertTriangle, { size: 38 })), /* @__PURE__ */ React.createElement("h1", null, "\u05E0\u05D3\u05E8\u05E9 \u05D7\u05D9\u05D1\u05D5\u05E8 \u05DE\u05D0\u05D5\u05D1\u05D8\u05D7"), /* @__PURE__ */ React.createElement("p", { className: "intro-sub" }, "\u05D4\u05D3\u05E4\u05D3\u05E4\u05DF \u05D7\u05D5\u05E1\u05DD \u05D2\u05D9\u05E9\u05D4 \u05DC\u05DE\u05E6\u05DC\u05DE\u05D4 \u05DE\u05E7\u05D1\u05E6\u05D9\u05DD \u05E9\u05E0\u05E4\u05EA\u05D7\u05D9\u05DD \u05D9\u05E9\u05D9\u05E8\u05D5\u05EA \u05DE\u05D4\u05D3\u05D9\u05E1\u05E7 (", /* @__PURE__ */ React.createElement("code", null, "file://"), ") \u05D0\u05D5 \u05DE\u05D0\u05EA\u05E8\u05D9\u05DD \u05D1\u05DC\u05D9 HTTPS - \u05D6\u05D5 \u05DC\u05D0 \u05D1\u05E2\u05D9\u05D4 \u05D1\u05D0\u05E4\u05DC\u05D9\u05E7\u05E6\u05D9\u05D4, \u05D6\u05D5 \u05DE\u05D3\u05D9\u05E0\u05D9\u05D5\u05EA \u05D0\u05D1\u05D8\u05D7\u05D4 \u05E9\u05DC \u05D4\u05D3\u05E4\u05D3\u05E4\u05DF. \u05D4\u05D3\u05E4\u05D3\u05E4\u05DF \u05DC\u05D0 \u05D9\u05E6\u05D9\u05D2 \u05D1\u05DB\u05DC\u05DC \u05D1\u05E7\u05E9\u05EA \u05D0\u05D9\u05E9\u05D5\u05E8 \u05D1\u05DE\u05E6\u05D1 \u05D4\u05D6\u05D4."), /* @__PURE__ */ React.createElement("p", { className: "intro-sub", style: { textAlign: "right" } }, "\u05DB\u05D3\u05D9 \u05E9\u05D6\u05D4 \u05D9\u05E2\u05D1\u05D5\u05D3, \u05E4\u05EA\u05D7 \u05D0\u05EA \u05D4\u05E7\u05D5\u05D1\u05E5 \u05D1\u05D0\u05D7\u05EA \u05DE\u05D4\u05D3\u05E8\u05DB\u05D9\u05DD \u05D4\u05D1\u05D0\u05D5\u05EA:"), /* @__PURE__ */ React.createElement("ul", { className: "intro-steps" }, /* @__PURE__ */ React.createElement("li", null, /* @__PURE__ */ React.createElement("span", { className: "step-num" }, "1"), " \u05D4\u05E2\u05DC\u05D4 \u05D0\u05EA \u05D4\u05E7\u05D5\u05D1\u05E5 \u05DC\u05D0\u05D7\u05E1\u05D5\u05DF \u05E2\u05DD HTTPS (\u05DC\u05DE\u05E9\u05DC GitHub Pages, Netlify Drop) \u05D5\u05E4\u05EA\u05D7 \u05DE\u05E9\u05DD"), /* @__PURE__ */ React.createElement("li", null, /* @__PURE__ */ React.createElement("span", { className: "step-num" }, "2"), " \u05D0\u05D5 \u05D4\u05E8\u05E5 \u05E9\u05E8\u05EA \u05DE\u05E7\u05D5\u05DE\u05D9 - \u05DC\u05DE\u05E9\u05DC ", /* @__PURE__ */ React.createElement("code", null, "python3 -m http.server"), " \u05D1\u05EA\u05D9\u05E7\u05D9\u05D9\u05EA \u05D4\u05E7\u05D5\u05D1\u05E5, \u05D5\u05E4\u05EA\u05D7 ", /* @__PURE__ */ React.createElement("code", null, "http://localhost:8000"))));
   }
-  return /* @__PURE__ */ React.createElement("div", { className: "screen intro-screen" }, /* @__PURE__ */ React.createElement("div", { className: "intro-icon" }, /* @__PURE__ */ React.createElement(Camera, { size: 38 })), /* @__PURE__ */ React.createElement("h1", null, "\u05D2\u05D9\u05E9\u05D4 \u05DC\u05DE\u05E6\u05DC\u05DE\u05D4"), /* @__PURE__ */ React.createElement("p", { className: "intro-sub" }, "\u05DB\u05D3\u05D9 \u05DC\u05E1\u05E8\u05D5\u05E7 \u05D0\u05EA \u05E4\u05D0\u05D5\u05EA \u05D4\u05E7\u05D5\u05D1\u05D9\u05D9\u05D4, \u05D4\u05D0\u05E4\u05DC\u05D9\u05E7\u05E6\u05D9\u05D4 \u05E6\u05E8\u05D9\u05DB\u05D4 \u05D2\u05D9\u05E9\u05D4 \u05DC\u05DE\u05E6\u05DC\u05DE\u05D4. \u05D1\u05DC\u05D7\u05D9\u05E6\u05D4 \u05E2\u05DC \u05D4\u05DB\u05E4\u05EA\u05D5\u05E8 \u05EA\u05D5\u05E4\u05D9\u05E2 \u05D1\u05E7\u05E9\u05EA \u05D0\u05D9\u05E9\u05D5\u05E8 \u05E9\u05DC \u05D4\u05D3\u05E4\u05D3\u05E4\u05DF - \u05D9\u05E9 \u05DC\u05D0\u05E9\u05E8 \u05D0\u05D5\u05EA\u05D4 \u05DB\u05D3\u05D9 \u05DC\u05D4\u05DE\u05E9\u05D9\u05DA."), state === "denied" && /* @__PURE__ */ React.createElement("div", { className: "error-item", style: { marginBottom: 16, textAlign: "right" } }, /* @__PURE__ */ React.createElement("span", { className: "error-dot" }), /* @__PURE__ */ React.createElement("p", null, "\u05D4\u05D2\u05D9\u05E9\u05D4 \u05DC\u05DE\u05E6\u05DC\u05DE\u05D4 \u05E0\u05DB\u05E9\u05DC\u05D4: ", errMsg, ".", errMsg && errMsg.toLowerCase().includes("denied") ? " \u05D9\u05D9\u05EA\u05DB\u05DF \u05E9\u05DB\u05D1\u05E8 \u05D7\u05E1\u05DE\u05EA \u05D2\u05D9\u05E9\u05D4 \u05D1\u05E2\u05D1\u05E8 - \u05DC\u05D7\u05E5 \u05E2\u05DC \u05E1\u05DE\u05DC \u05D4\u05DE\u05E0\u05E2\u05D5\u05DC/\u05D4\u05DE\u05D9\u05D3\u05E2 \u05DC\u05D9\u05D3 \u05DB\u05EA\u05D5\u05D1\u05EA \u05D4\u05D0\u05EA\u05E8 \u05D1\u05D3\u05E4\u05D3\u05E4\u05DF, \u05E4\u05EA\u05D7 \u05D0\u05EA \u05D4\u05D2\u05D3\u05E8\u05D5\u05EA \u05D4\u05D0\u05EA\u05E8, \u05D0\u05E4\u05E9\u05E8 \u05D2\u05D9\u05E9\u05D4 \u05DC\u05DE\u05E6\u05DC\u05DE\u05D4 \u05E9\u05DD, \u05D5\u05E8\u05E2\u05E0\u05DF \u05D0\u05EA \u05D4\u05D3\u05E3 (\u05D4\u05D3\u05E4\u05D3\u05E4\u05DF \u05DC\u05D0 \u05D9\u05D1\u05E7\u05E9 \u05E9\u05D5\u05D1 \u05D0\u05D9\u05E9\u05D5\u05E8 \u05D0\u05D5\u05D8\u05D5\u05DE\u05D8\u05D9\u05EA \u05D0\u05D7\u05E8\u05D9 \u05E9\u05E0\u05D7\u05E1\u05DD \u05E4\u05E2\u05DD \u05D0\u05D7\u05EA)." : " \u05D1\u05D3\u05D5\u05E7 \u05D1\u05D4\u05D2\u05D3\u05E8\u05D5\u05EA \u05D4\u05D3\u05E4\u05D3\u05E4\u05DF \u05E9\u05D4\u05D0\u05EA\u05E8 \u05DE\u05D5\u05E8\u05E9\u05D4 \u05DC\u05D2\u05E9\u05EA \u05DC\u05DE\u05E6\u05DC\u05DE\u05D4, \u05D5\u05E0\u05E1\u05D4 \u05E9\u05D5\u05D1.")), /* @__PURE__ */ React.createElement("button", { className: "primary-btn full", onClick: requestCamera, disabled: state === "requesting" }, /* @__PURE__ */ React.createElement(Camera, { size: 18 }), " ", state === "requesting" ? "\u05DE\u05DE\u05EA\u05D9\u05DF \u05DC\u05D0\u05D9\u05E9\u05D5\u05E8\u2026" : "\u05D0\u05E4\u05E9\u05E8 \u05D2\u05D9\u05E9\u05D4 \u05DC\u05DE\u05E6\u05DC\u05DE\u05D4"));
-}
-function ScanScreen({ faceIdx, stream, rawCaptures, onCapture, onBack }) {
-  const face = FACE_SEQUENCE[faceIdx];
-  const videoRef = useRef(null);
-  const canvasRef = useRef(null);
-  const [ready, setReady] = useState(false);
-  const [notCubeWarning, setNotCubeWarning] = useState(false);
-  const [mirrored, setMirrored] = useState(false);
-  const capturedColors = {};
-  FACE_SEQUENCE.forEach((f) => {
-    if (rawCaptures[f]) capturedColors[f] = rawCaptures[f].map((idx) => CUBE_COLORS[idx].css);
-  });
-  useEffect(() => {
-    setReady(false);
-    setNotCubeWarning(false);
-    const video = videoRef.current;
-    if (!video || !stream) return;
-    video.srcObject = stream;
-    const track = stream.getVideoTracks()[0];
-    const settings = track && track.getSettings ? track.getSettings() : {};
-    setMirrored(settings.facingMode !== "environment");
-    const onLoaded = () => {
-      video.play();
-      setReady(true);
-    };
-    video.addEventListener("loadedmetadata", onLoaded);
-    if (video.readyState >= 1) onLoaded();
-    return () => video.removeEventListener("loadedmetadata", onLoaded);
-  }, [stream, faceIdx]);
-  const capture = () => {
-    const video = videoRef.current;
-    if (!video || !video.videoWidth) return;
-    const size = Math.min(video.videoWidth, video.videoHeight);
-    const sx = (video.videoWidth - size) / 2;
-    const sy = (video.videoHeight - size) / 2;
-    const canvas = canvasRef.current;
-    canvas.width = size;
-    canvas.height = size;
-    const ctx = canvas.getContext("2d");
-    ctx.save();
-    if (mirrored) {
-      ctx.translate(size, 0);
-      ctx.scale(-1, 1);
-    }
-    ctx.drawImage(video, sx, sy, size, size, 0, 0, size, size);
-    ctx.restore();
-    const imageData = ctx.getImageData(0, 0, size, size);
-    const { colorIndices, looksLikeCube } = analyzeFaceCapture(imageData);
-    if (!looksLikeCube) {
-      setNotCubeWarning(true);
-      return;
-    }
-    setNotCubeWarning(false);
-    onCapture(face, colorIndices);
-  };
-  return /* @__PURE__ */ React.createElement("div", { className: "screen scan-screen" }, /* @__PURE__ */ React.createElement("div", { className: "scan-header" }, /* @__PURE__ */ React.createElement("button", { className: "icon-btn", onClick: onBack, "aria-label": "\u05D7\u05D6\u05E8\u05D4" }, /* @__PURE__ */ React.createElement(ChevronRight, { size: 22 })), /* @__PURE__ */ React.createElement("div", { className: "scan-progress" }, FACE_SEQUENCE.map((f, i) => /* @__PURE__ */ React.createElement("div", { key: f, className: `dot ${i === faceIdx ? "dot-active" : ""} ${i < faceIdx ? "dot-done" : ""}` }))), /* @__PURE__ */ React.createElement("div", { style: { width: 38 } })), /* @__PURE__ */ React.createElement("h2", { className: "scan-title" }, "\u05E1\u05E8\u05D5\u05E7 \u05E4\u05D0\u05D4 ", faceIdx + 1, " \u05DE\u05EA\u05D5\u05DA 6: ", /* @__PURE__ */ React.createElement("span", { className: "accent" }, FACE_LABEL_HE[face])), /* @__PURE__ */ React.createElement("p", { className: "scan-guidance" }, FACE_GUIDANCE_HE[face]), /* @__PURE__ */ React.createElement("div", { className: "guide-cube-frame" }, /* @__PURE__ */ React.createElement(GuideCube3D, { targetFace: face, capturedColors })), /* @__PURE__ */ React.createElement("div", { className: "camera-wrap" }, /* @__PURE__ */ React.createElement("video", { ref: videoRef, className: "camera-video", style: mirrored ? { transform: "scaleX(-1)" } : void 0, playsInline: true, muted: true }), /* @__PURE__ */ React.createElement("div", { className: "frame-outline" }), !ready && /* @__PURE__ */ React.createElement("div", { className: "camera-loading" }, "\u05E4\u05D5\u05EA\u05D7 \u05DE\u05E6\u05DC\u05DE\u05D4\u2026")), notCubeWarning && /* @__PURE__ */ React.createElement("div", { className: "error-item", style: { marginBottom: 14 } }, /* @__PURE__ */ React.createElement("span", { className: "error-dot" }), /* @__PURE__ */ React.createElement("p", null, "\u05D6\u05D4 \u05DC\u05D0 \u05E0\u05E8\u05D0\u05D4 \u05DB\u05DE\u05D5 \u05E4\u05D0\u05D4 \u05E9\u05DC \u05E7\u05D5\u05D1\u05D9\u05D9\u05D4 \u05D4\u05D5\u05E0\u05D2\u05E8\u05D9\u05EA - \u05D5\u05D3\u05D0 \u05E9\u05D4\u05E4\u05D0\u05D4 \u05DE\u05DB\u05E1\u05D4 \u05D0\u05EA \u05DB\u05DC \u05D4\u05E8\u05D9\u05D1\u05D5\u05E2, \u05E9\u05D4\u05EA\u05D0\u05D5\u05E8\u05D4 \u05D8\u05D5\u05D1\u05D4, \u05D5\u05E0\u05E1\u05D4 \u05DC\u05E6\u05DC\u05DD \u05E9\u05D5\u05D1.")), /* @__PURE__ */ React.createElement("button", { className: "capture-btn", onClick: capture, disabled: !ready }, /* @__PURE__ */ React.createElement(Camera, { size: 22 }), " \u05E6\u05DC\u05DD \u05E4\u05D0\u05D4 \u05D6\u05D5"), /* @__PURE__ */ React.createElement("canvas", { ref: canvasRef, style: { display: "none" } }));
-}
-function ReviewScreen({ rawCaptures, onChangeCell, onConfirm, onRescanFace, faceOrderIdx, setFaceOrderIdx }) {
-  const face = FACE_SEQUENCE[faceOrderIdx];
-  const cells = rawCaptures[face] || [];
-  const [paintIdx, setPaintIdx] = useState(0);
-  const counts = new Array(CUBE_COLORS.length).fill(0);
-  FACE_SEQUENCE.forEach((f) => (rawCaptures[f] || []).forEach((idx) => counts[idx]++));
-  return /* @__PURE__ */ React.createElement("div", { className: "screen review-screen" }, /* @__PURE__ */ React.createElement("h2", { className: "scan-title" }, "\u05D1\u05D3\u05D9\u05E7\u05EA \u05E6\u05D1\u05E2\u05D9\u05DD: ", /* @__PURE__ */ React.createElement("span", { className: "accent" }, FACE_LABEL_HE[face])), /* @__PURE__ */ React.createElement("p", { className: "scan-guidance" }, "\u05D2\u05E8\u05D5\u05E8 \u05DB\u05D3\u05D9 \u05DC\u05E1\u05D5\u05D1\u05D1 \u05D5\u05DC\u05D1\u05D3\u05D5\u05E7 \u05D0\u05EA \u05DB\u05DC \u05D4\u05E7\u05D5\u05D1\u05D9\u05D9\u05D4. \u05D0\u05DD \u05E6\u05D1\u05E2 \u05DC\u05D0 \u05E0\u05DB\u05D5\u05DF: \u05D1\u05D7\u05E8 \u05D0\u05EA \u05D4\u05E6\u05D1\u05E2 \u05D4\u05E0\u05DB\u05D5\u05DF \u05DC\u05DE\u05D8\u05D4, \u05D5\u05D0\u05D6 \u05D4\u05E7\u05E9 \u05E2\u05DC \u05D4\u05DE\u05E9\u05D1\u05E6\u05EA \u05E9\u05E6\u05E8\u05D9\u05DA \u05DC\u05EA\u05E7\u05DF."), /* @__PURE__ */ React.createElement("div", { className: "inspect-cube-frame" }, /* @__PURE__ */ React.createElement(InspectCube3D, { rawCaptures, paintIdx, onChangeCell })), /* @__PURE__ */ React.createElement("div", { className: "face-tabs" }, FACE_SEQUENCE.map((f, i) => /* @__PURE__ */ React.createElement("button", { key: f, className: `face-tab ${i === faceOrderIdx ? "face-tab-active" : ""}`, onClick: () => setFaceOrderIdx(i) }, FACE_LABEL_HE[f]))), /* @__PURE__ */ React.createElement("p", { className: "paint-label" }, "\u05E6\u05D1\u05E2 \u05DC\u05EA\u05D9\u05E7\u05D5\u05DF:"), /* @__PURE__ */ React.createElement("div", { className: "paint-palette" }, CUBE_COLORS.map((c, i) => /* @__PURE__ */ React.createElement(
-    "button",
-    {
-      key: c.key,
-      className: `paint-swatch ${i === paintIdx ? "paint-swatch-active" : ""}`,
-      style: { background: c.css },
-      onClick: () => setPaintIdx(i)
-    },
-    /* @__PURE__ */ React.createElement("span", { className: `paint-count ${counts[i] !== 9 ? "paint-count-bad" : ""}` }, counts[i])
-  ))), /* @__PURE__ */ React.createElement("p", { className: "paint-hint" }, "\u05D1\u05D7\u05E8 \u05E6\u05D1\u05E2 \u05DC\u05EA\u05D9\u05E7\u05D5\u05DF, \u05D5\u05D0\u05D6 \u05D2\u05E2 \u05D9\u05E9\u05D9\u05E8\u05D5\u05EA \u05D1\u05DE\u05D3\u05D1\u05E7\u05D4 \u05E9\u05D1\u05E7\u05D5\u05D1\u05D9\u05D9\u05D4 \u05DB\u05D3\u05D9 \u05DC\u05E6\u05D1\u05D5\u05E2 \u05D0\u05D5\u05EA\u05D4. \u05D2\u05E8\u05D5\u05E8 \u05D0\u05EA \u05D4\u05E7\u05D5\u05D1\u05D9\u05D9\u05D4 \u05DB\u05D3\u05D9 \u05DC\u05E1\u05D5\u05D1\u05D1 \u05D0\u05D5\u05EA\u05D4. \u05D4\u05DE\u05E1\u05E4\u05E8 \u05D4\u05D0\u05D3\u05D5\u05DD \u05DE\u05E1\u05DE\u05DF \u05D7\u05D5\u05E1\u05E8 \u05D4\u05EA\u05D0\u05DE\u05D4."), /* @__PURE__ */ React.createElement("div", { className: "review-actions" }, /* @__PURE__ */ React.createElement("button", { className: "secondary-btn", onClick: () => onRescanFace(faceOrderIdx) }, /* @__PURE__ */ React.createElement(RefreshCw, { size: 18 }), " \u05E1\u05E8\u05D5\u05E7 \u05E4\u05D0\u05D4 \u05D6\u05D5 \u05DE\u05D7\u05D3\u05E9"), faceOrderIdx < 5 ? /* @__PURE__ */ React.createElement("button", { className: "primary-btn", onClick: () => setFaceOrderIdx(faceOrderIdx + 1) }, "\u05D4\u05E4\u05D0\u05D4 \u05D4\u05D1\u05D0\u05D4 ", /* @__PURE__ */ React.createElement(ChevronLeft, { size: 18 })) : /* @__PURE__ */ React.createElement("button", { className: "primary-btn", onClick: onConfirm }, /* @__PURE__ */ React.createElement(Check, { size: 18 }), " \u05D1\u05D3\u05D5\u05E7 \u05EA\u05E7\u05D9\u05E0\u05D5\u05EA")));
-}
-function ValidationErrorScreen({ result, onRescan, onBack }) {
-  return /* @__PURE__ */ React.createElement("div", { className: "screen" }, /* @__PURE__ */ React.createElement("div", { className: "error-hero" }, /* @__PURE__ */ React.createElement(AlertTriangle, { size: 40, color: "#c0392b" }), /* @__PURE__ */ React.createElement("h2", null, "\u05E0\u05DE\u05E6\u05D0\u05D4 \u05D1\u05E2\u05D9\u05D4 \u05D1\u05E1\u05E8\u05D9\u05E7\u05D4")), /* @__PURE__ */ React.createElement("div", { className: "error-list" }, result.errors.map((e, i) => /* @__PURE__ */ React.createElement("div", { key: i, className: "error-item" }, /* @__PURE__ */ React.createElement("span", { className: "error-dot" }), /* @__PURE__ */ React.createElement("p", null, e.message)))), /* @__PURE__ */ React.createElement("p", { className: "error-hint" }, "\u05D1\u05D3\u05D5\u05E7 \u05E9\u05D5\u05D1 \u05D0\u05EA \u05D4\u05E4\u05D0\u05D5\u05EA \u05E9\u05E1\u05E8\u05E7\u05EA - \u05D1\u05DE\u05D9\u05D5\u05D7\u05D3 \u05E9\u05D4\u05D7\u05D6\u05E7\u05EA \u05D0\u05EA \u05D4\u05E7\u05D5\u05D1\u05D9\u05D9\u05D4 \u05D1\u05D0\u05D5\u05EA\u05D5 \u05DB\u05D9\u05D5\u05D5\u05DF \u05DB\u05E4\u05D9 \u05E9\u05DE\u05EA\u05D5\u05D0\u05E8 \u05D1\u05D4\u05E0\u05D7\u05D9\u05D5\u05EA, \u05D5\u05E9\u05DB\u05DC \u05DE\u05D3\u05D1\u05E7\u05D4 \u05D6\u05D5\u05D4\u05EA\u05D4 \u05D1\u05E6\u05D1\u05E2 \u05D4\u05E0\u05DB\u05D5\u05DF."), /* @__PURE__ */ React.createElement("button", { className: "primary-btn full", onClick: onBack }, /* @__PURE__ */ React.createElement(RefreshCw, { size: 18 }), " \u05D7\u05D6\u05E8\u05D4 \u05DC\u05D1\u05D3\u05D9\u05E7\u05EA \u05D4\u05E6\u05D1\u05E2\u05D9\u05DD"));
-}
-const CUBIE_SIZE = 0.94;
-const CUBIE_GAP = 1;
-const STICKER_INSET = 0.06;
-const DARK_PLASTIC = "#1c1c22";
-function buildCubieMesh(cubie) {
-  const dirs = [["x", 1], ["x", -1], ["y", 1], ["y", -1], ["z", 1], ["z", -1]];
-  const materials = dirs.map(([axis, dir]) => {
-    const sticker = cubie.stickers.find((s) => s.axis === axis && s.dir === dir);
-    const color = sticker ? sticker.displayColor : DARK_PLASTIC;
-    return new THREE.MeshLambertMaterial({ color });
-  });
-  const geo = new THREE.BoxGeometry(CUBIE_SIZE, CUBIE_SIZE, CUBIE_SIZE);
-  const mesh = new THREE.Mesh(geo, materials);
-  const group = new THREE.Group();
-  group.add(mesh);
-  return group;
-}
-function matrixToQuaternion(m) {
-  const mat4 = new THREE.Matrix4();
-  mat4.set(
-    m[0][0],
-    m[0][1],
-    m[0][2],
-    0,
-    m[1][0],
-    m[1][1],
-    m[1][2],
-    0,
-    m[2][0],
-    m[2][1],
-    m[2][2],
-    0,
-    0,
-    0,
-    0,
-    1
-  );
-  const q = new THREE.Quaternion();
-  q.setFromRotationMatrix(mat4);
-  return q;
-}
-function Cube3D({ initialCube, movesQueue, currentMoveIndex, onAnimStateChange, speed }) {
-  const mountRef = useRef(null);
-  const stateRef = useRef({
-    scene: null,
-    camera: null,
-    renderer: null,
-    rig: null,
-    meshById: {},
-    liveCube: null,
-    animating: false,
-    raf: null
-  });
-  const orbitRef = useRef({ az: 0.7, el: 0.5, dragging: false, lastX: 0, lastY: 0 });
-  const lastAppliedIndexRef = useRef(-1);
-  useEffect(() => {
-    const mount = mountRef.current;
-    const scene = new THREE.Scene();
-    scene.background = null;
-    const camera = new THREE.PerspectiveCamera(38, 1, 0.1, 100);
-    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
-    mount.appendChild(renderer.domElement);
-    scene.add(new THREE.AmbientLight(16777215, 0.75));
-    const dir1 = new THREE.DirectionalLight(16777215, 0.55);
-    dir1.position.set(5, 8, 6);
-    scene.add(dir1);
-    const dir2 = new THREE.DirectionalLight(16777215, 0.25);
-    dir2.position.set(-6, -3, -4);
-    scene.add(dir2);
-    const rig = new THREE.Group();
-    scene.add(rig);
-    const meshById = {};
-    initialCube.forEach((cubie) => {
-      const group = buildCubieMesh(cubie);
-      group.position.set(cubie.pos[0] * CUBIE_GAP, cubie.pos[1] * CUBIE_GAP, cubie.pos[2] * CUBIE_GAP);
-      group.quaternion.copy(matrixToQuaternion(cubie.ori));
-      rig.add(group);
-      meshById[cubie.id] = group;
-    });
-    Object.assign(stateRef.current, {
-      scene,
-      camera,
-      renderer,
-      rig,
-      meshById,
-      liveCube: initialCube.map((c) => ({ ...c, pos: c.pos.slice(), ori: c.ori.map((r) => r.slice()) }))
-    });
-    function resize() {
-      const w = mount.clientWidth, h = mount.clientHeight;
-      renderer.setSize(w, h);
-      camera.aspect = w / h;
-      camera.updateProjectionMatrix();
-    }
-    resize();
-    const ro = new ResizeObserver(resize);
-    ro.observe(mount);
-    function updateCameraPosition() {
-      const { az, el: el2 } = orbitRef.current;
-      const dist = 7.2;
-      const x = dist * Math.cos(el2) * Math.sin(az);
-      const y = dist * Math.sin(el2);
-      const z = dist * Math.cos(el2) * Math.cos(az);
-      camera.position.set(x, y, z);
-      camera.lookAt(0, 0, 0);
-    }
-    updateCameraPosition();
-    function onPointerDown(e) {
-      orbitRef.current.dragging = true;
-      orbitRef.current.lastX = e.clientX;
-      orbitRef.current.lastY = e.clientY;
-    }
-    function onPointerMove(e) {
-      if (!orbitRef.current.dragging) return;
-      const dx = e.clientX - orbitRef.current.lastX;
-      const dy = e.clientY - orbitRef.current.lastY;
-      orbitRef.current.lastX = e.clientX;
-      orbitRef.current.lastY = e.clientY;
-      orbitRef.current.az -= dx * 8e-3;
-      orbitRef.current.el = Math.max(-1.2, Math.min(1.2, orbitRef.current.el + dy * 8e-3));
-      updateCameraPosition();
-    }
-    function onPointerUp() {
-      orbitRef.current.dragging = false;
-    }
-    const el = renderer.domElement;
-    el.style.touchAction = "none";
-    el.addEventListener("pointerdown", onPointerDown);
-    window.addEventListener("pointermove", onPointerMove);
-    window.addEventListener("pointerup", onPointerUp);
-    let raf;
-    function tick() {
-      renderer.render(scene, camera);
-      raf = requestAnimationFrame(tick);
-    }
-    tick();
-    return () => {
-      cancelAnimationFrame(raf);
-      ro.disconnect();
-      el.removeEventListener("pointerdown", onPointerDown);
-      window.removeEventListener("pointermove", onPointerMove);
-      window.removeEventListener("pointerup", onPointerUp);
-      renderer.dispose();
-      if (mount.contains(renderer.domElement)) mount.removeChild(renderer.domElement);
-    };
-  }, []);
-  useEffect(() => {
-    const st = stateRef.current;
-    if (!st.renderer) return;
-    async function run() {
-      while (lastAppliedIndexRef.current < currentMoveIndex) {
-        const idx = lastAppliedIndexRef.current + 1;
-        const move = movesQueue[idx];
-        if (!move) break;
-        await animateOneMove(st, move, orbitRef, 320 / (speed || 1));
-        lastAppliedIndexRef.current = idx;
-      }
-      while (lastAppliedIndexRef.current > currentMoveIndex) {
-        const idx = lastAppliedIndexRef.current;
-        const move = movesQueue[idx];
-        if (!move) break;
-        await animateOneMove(st, invertMove(move), orbitRef, 320 / (speed || 1));
-        lastAppliedIndexRef.current = idx - 1;
-      }
-      onAnimStateChange && onAnimStateChange(false);
-    }
-    onAnimStateChange && onAnimStateChange(true);
-    run();
-  }, [currentMoveIndex, movesQueue, speed]);
-  return /* @__PURE__ */ React.createElement("div", { ref: mountRef, className: "cube3d-mount" });
-}
-function animateOneMove(st, move, orbitRef, durationMs) {
-  return new Promise((resolve) => {
-    const face = move[0];
-    const mod = move.slice(1);
-    const { axis, dir } = FACE_INFO[face];
-    let turns = 1;
-    if (mod === "'") turns = 3;
-    else if (mod === "2") turns = 2;
-    const s = axis === "y" ? dir : -dir;
-    const totalAngle = turns * s * (Math.PI / 2);
-    const axisVec = axis === "x" ? new THREE.Vector3(1, 0, 0) : axis === "y" ? new THREE.Vector3(0, 1, 0) : new THREE.Vector3(0, 0, 1);
-    const idx = AXIS_IDX[axis];
-    const affected = st.liveCube.filter((c) => c.pos[idx] === dir);
-    const startData = affected.map((c) => ({
-      id: c.id,
-      pos: c.pos.slice(),
-      quat: st.meshById[c.id].quaternion.clone()
-    }));
-    const t0 = performance.now();
-    function frame(now) {
-      const t = Math.min(1, (now - t0) / durationMs);
-      const eased = t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
-      const angle = totalAngle * eased;
-      const qDelta = new THREE.Quaternion().setFromAxisAngle(axisVec, angle);
-      startData.forEach((sd) => {
-        const mesh = st.meshById[sd.id];
-        const pos = new THREE.Vector3(sd.pos[0] * CUBIE_GAP, sd.pos[1] * CUBIE_GAP, sd.pos[2] * CUBIE_GAP);
-        pos.applyQuaternion(qDelta);
-        mesh.position.copy(pos);
-        mesh.quaternion.copy(qDelta).multiply(sd.quat);
-      });
-      if (t < 1) {
-        requestAnimationFrame(frame);
-      } else {
-        st.liveCube = applyMove(st.liveCube, move);
-        st.liveCube.forEach((c) => {
-          const mesh = st.meshById[c.id];
-          mesh.position.set(c.pos[0] * CUBIE_GAP, c.pos[1] * CUBIE_GAP, c.pos[2] * CUBIE_GAP);
-          mesh.quaternion.copy(matrixToQuaternion(c.ori));
-        });
-        resolve();
-      }
-    }
-    requestAnimationFrame(frame);
-  });
-}
-const GUIDE_GRAY = "#9a9aa4";
-function buildGuideCubieMesh(cubie) {
-  const dirs = [["x", 1], ["x", -1], ["y", 1], ["y", -1], ["z", 1], ["z", -1]];
-  const materials = dirs.map(([axis, dir]) => {
-    const sticker = cubie.stickers.find((s) => s.axis === axis && s.dir === dir);
-    const color = sticker ? GUIDE_GRAY : DARK_PLASTIC;
-    return new THREE.MeshLambertMaterial({ color });
-  });
-  const geo = new THREE.BoxGeometry(CUBIE_SIZE, CUBIE_SIZE, CUBIE_SIZE);
-  const mesh = new THREE.Mesh(geo, materials);
-  const group = new THREE.Group();
-  group.add(mesh);
-  group.userData.mesh = mesh;
-  return group;
-}
-const MAT_INDEX = { "x1": 0, "x-1": 1, "y1": 2, "y-1": 3, "z1": 4, "z-1": 5 };
-function GuideCube3D({ targetFace, capturedColors }) {
-  const mountRef = useRef(null);
-  const stateRef = useRef({ renderer: null, camera: null, scene: null, rig: null, meshById: {}, refCube: null });
-  const currentQuatRef = useRef(new THREE.Quaternion());
-  const animRef = useRef(null);
-  useEffect(() => {
-    const mount = mountRef.current;
-    const scene = new THREE.Scene();
-    const camera = new THREE.PerspectiveCamera(36, 1, 0.1, 100);
-    camera.position.set(0, 0, 6.4);
-    camera.lookAt(0, 0, 0);
-    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
-    mount.appendChild(renderer.domElement);
-    scene.add(new THREE.AmbientLight(16777215, 0.8));
-    const d1 = new THREE.DirectionalLight(16777215, 0.5);
-    d1.position.set(4, 6, 5);
-    scene.add(d1);
-    const d2 = new THREE.DirectionalLight(16777215, 0.25);
-    d2.position.set(-4, -2, -3);
-    scene.add(d2);
-    const rig = new THREE.Group();
-    scene.add(rig);
-    const refColorMap = { U: "U", D: "D", F: "F", B: "B", L: "L", R: "R" };
-    const refCube = makeSolvedCube(refColorMap);
-    const meshById = {};
-    refCube.forEach((cubie) => {
-      const group = buildGuideCubieMesh(cubie);
-      group.position.set(cubie.pos[0] * CUBIE_GAP, cubie.pos[1] * CUBIE_GAP, cubie.pos[2] * CUBIE_GAP);
-      rig.add(group);
-      meshById[cubie.id] = group;
-    });
-    Object.assign(stateRef.current, { renderer, camera, scene, rig, meshById, refCube });
-    function resize() {
-      const w = mount.clientWidth, h = mount.clientHeight;
-      renderer.setSize(w, h);
-      camera.aspect = w / h;
-      camera.updateProjectionMatrix();
-    }
-    resize();
-    const ro = new ResizeObserver(resize);
-    ro.observe(mount);
-    let raf;
-    function tick() {
-      renderer.render(scene, camera);
-      raf = requestAnimationFrame(tick);
-    }
-    tick();
-    return () => {
-      cancelAnimationFrame(raf);
-      ro.disconnect();
-      renderer.dispose();
-      if (mount.contains(renderer.domElement)) mount.removeChild(renderer.domElement);
-    };
-  }, []);
-  useEffect(() => {
-    const st = stateRef.current;
-    if (!st.rig) return;
-    const targetMatrix = faceViewMatrix(targetFace);
-    const targetQuat = matrixToQuaternion(targetMatrix);
-    const startQuat = currentQuatRef.current.clone();
-    if (animRef.current) cancelAnimationFrame(animRef.current);
-    const t0 = performance.now();
-    const duration = 700;
-    function frame(now) {
-      const t = Math.min(1, (now - t0) / duration);
-      const eased = t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
-      const q = startQuat.clone().slerp(targetQuat, eased);
-      st.rig.quaternion.copy(q);
-      if (t < 1) {
-        animRef.current = requestAnimationFrame(frame);
-      } else {
-        currentQuatRef.current = targetQuat.clone();
-      }
-    }
-    animRef.current = requestAnimationFrame(frame);
-  }, [targetFace]);
-  useEffect(() => {
-    const st = stateRef.current;
-    if (!st.refCube) return;
-    FACE_SEQUENCE.forEach((face) => {
-      const colors = capturedColors[face];
-      if (!colors) return;
-      const { axis, dir } = FACE_INFO[face];
-      const positions = faceLayerPositions(face);
-      positions.forEach((pos, i) => {
-        const cubie = st.refCube.find((c) => c.pos[0] === pos[0] && c.pos[1] === pos[1] && c.pos[2] === pos[2]);
-        const group = st.meshById[cubie.id];
-        const mesh = group.userData.mesh;
-        const matIdx = MAT_INDEX[`${axis}${dir}`];
-        mesh.material[matIdx].color.set(colors[i]);
-      });
-    });
-  }, [capturedColors]);
-  return /* @__PURE__ */ React.createElement("div", { ref: mountRef, className: "guide-cube-mount" });
-}
-function InspectCube3D({ rawCaptures, paintIdx, onChangeCell }) {
-  const mountRef = useRef(null);
-  const stateRef = useRef({ renderer: null, camera: null, scene: null, meshById: {}, refCube: null, stickerLookup: {}, meshes: [] });
-  const orbitRef = useRef({ az: 0.6, el: 0.45, dragging: false, lastX: 0, lastY: 0, downX: 0, downY: 0, moved: false });
-  const paintRef = useRef({ paintIdx: 0, onChangeCell: null });
-  paintRef.current.paintIdx = paintIdx;
-  paintRef.current.onChangeCell = onChangeCell;
-  useEffect(() => {
-    const mount = mountRef.current;
-    const scene = new THREE.Scene();
-    const camera = new THREE.PerspectiveCamera(36, 1, 0.1, 100);
-    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
-    mount.appendChild(renderer.domElement);
-    scene.add(new THREE.AmbientLight(16777215, 0.8));
-    const d1 = new THREE.DirectionalLight(16777215, 0.5);
-    d1.position.set(4, 6, 5);
-    scene.add(d1);
-    const d2 = new THREE.DirectionalLight(16777215, 0.25);
-    d2.position.set(-4, -2, -3);
-    scene.add(d2);
-    const refColorMap = { U: "U", D: "D", F: "F", B: "B", L: "L", R: "R" };
-    const refCube = makeSolvedCube(refColorMap);
-    const meshById = {};
-    const meshes = [];
-    refCube.forEach((cubie) => {
-      const group = buildGuideCubieMesh(cubie);
-      group.position.set(cubie.pos[0] * CUBIE_GAP, cubie.pos[1] * CUBIE_GAP, cubie.pos[2] * CUBIE_GAP);
-      scene.add(group);
-      meshById[cubie.id] = group;
-      const m = group.userData.mesh;
-      m.userData.cubieId = cubie.id;
-      meshes.push(m);
-    });
-    // Build (cubieId, matIdx) -> {face, cellIdx}
-    const stickerLookup = {};
-    FACE_SEQUENCE.forEach((face) => {
-      const { axis, dir } = FACE_INFO[face];
-      const matIdx = MAT_INDEX[`${axis}${dir}`];
-      const positions = faceLayerPositions(face);
-      positions.forEach((pos, cellIdx) => {
-        const cubie = refCube.find((c) => c.pos[0] === pos[0] && c.pos[1] === pos[1] && c.pos[2] === pos[2]);
-        stickerLookup[cubie.id + "_" + matIdx] = { face, cellIdx };
-      });
-    });
-    Object.assign(stateRef.current, { renderer, camera, scene, meshById, refCube, stickerLookup, meshes });
-    function resize() {
-      const w = mount.clientWidth, h = mount.clientHeight;
-      renderer.setSize(w, h);
-      camera.aspect = w / h;
-      camera.updateProjectionMatrix();
-    }
-    resize();
-    const ro = new ResizeObserver(resize);
-    ro.observe(mount);
-    function updateCam() {
-      const { az, el: el2 } = orbitRef.current;
-      const dist = 6.6;
-      camera.position.set(dist * Math.cos(el2) * Math.sin(az), dist * Math.sin(el2), dist * Math.cos(el2) * Math.cos(az));
-      camera.lookAt(0, 0, 0);
-    }
-    updateCam();
-    const raycaster = new THREE.Raycaster();
-    const ndc = new THREE.Vector2();
-    function onDown(e) {
-      orbitRef.current.dragging = true;
-      orbitRef.current.lastX = e.clientX;
-      orbitRef.current.lastY = e.clientY;
-      orbitRef.current.downX = e.clientX;
-      orbitRef.current.downY = e.clientY;
-      orbitRef.current.moved = false;
-    }
-    function onMove(e) {
-      if (!orbitRef.current.dragging) return;
-      const dx = e.clientX - orbitRef.current.lastX, dy = e.clientY - orbitRef.current.lastY;
-      orbitRef.current.lastX = e.clientX;
-      orbitRef.current.lastY = e.clientY;
-      const totDx = e.clientX - orbitRef.current.downX;
-      const totDy = e.clientY - orbitRef.current.downY;
-      if (Math.hypot(totDx, totDy) > 6) orbitRef.current.moved = true;
-      if (orbitRef.current.moved) {
-        orbitRef.current.az -= dx * 8e-3;
-        orbitRef.current.el = Math.max(-1.2, Math.min(1.2, orbitRef.current.el + dy * 8e-3));
-        updateCam();
-      }
-    }
-    function onUp(e) {
-      const wasDrag = orbitRef.current.moved;
-      orbitRef.current.dragging = false;
-      if (wasDrag) return;
-      // Tap: raycast against sticker meshes
-      const st = stateRef.current;
-      if (!st.meshes || !st.meshes.length) return;
-      const rect = renderer.domElement.getBoundingClientRect();
-      const cx = (e.clientX ?? orbitRef.current.lastX);
-      const cy = (e.clientY ?? orbitRef.current.lastY);
-      ndc.x = ((cx - rect.left) / rect.width) * 2 - 1;
-      ndc.y = -((cy - rect.top) / rect.height) * 2 + 1;
-      raycaster.setFromCamera(ndc, camera);
-      const hits = raycaster.intersectObjects(st.meshes, false);
-      if (!hits.length) return;
-      const hit = hits[0];
-      const matIdx = hit.face && hit.face.materialIndex;
-      const cubieId = hit.object.userData.cubieId;
-      const info = st.stickerLookup[cubieId + "_" + matIdx];
-      if (!info) return;
-      const { onChangeCell: cb, paintIdx: pi } = paintRef.current;
-      if (cb) cb(info.face, info.cellIdx, pi);
-    }
-    const el = renderer.domElement;
-    el.style.touchAction = "none";
-    el.addEventListener("pointerdown", onDown);
-    window.addEventListener("pointermove", onMove);
-    window.addEventListener("pointerup", onUp);
-    el.addEventListener("pointerup", onUp);
-    let raf;
-    function tick() {
-      renderer.render(scene, camera);
-      raf = requestAnimationFrame(tick);
-    }
-    tick();
-    return () => {
-      cancelAnimationFrame(raf);
-      ro.disconnect();
-      el.removeEventListener("pointerdown", onDown);
-      el.removeEventListener("pointerup", onUp);
-      window.removeEventListener("pointermove", onMove);
-      window.removeEventListener("pointerup", onUp);
-      renderer.dispose();
-      if (mount.contains(renderer.domElement)) mount.removeChild(renderer.domElement);
-    };
-  }, []);
-  useEffect(() => {
-    const st = stateRef.current;
-    if (!st.refCube) return;
-    FACE_SEQUENCE.forEach((face) => {
-      const colorIdxs = rawCaptures[face];
-      if (!colorIdxs) return;
-      const { axis, dir } = FACE_INFO[face];
-      const positions = faceLayerPositions(face);
-      positions.forEach((pos, i) => {
-        const cubie = st.refCube.find((c) => c.pos[0] === pos[0] && c.pos[1] === pos[1] && c.pos[2] === pos[2]);
-        const group = st.meshById[cubie.id];
-        const mesh = group.userData.mesh;
-        const matIdx = MAT_INDEX[`${axis}${dir}`];
-        mesh.material[matIdx].color.set(CUBE_COLORS[colorIdxs[i]].css);
-      });
-    });
-  }, [rawCaptures]);
-  return /* @__PURE__ */ React.createElement("div", { ref: mountRef, className: "guide-cube-mount" });
-}
-const STYLES = `
-@import url('https://fonts.googleapis.com/css2?family=Heebo:wght@400;500;600;700;800&display=swap');
-
-* { box-sizing: border-box; }
-html, body { margin:0; padding:0; }
-
-.app-root {
-  min-height: 100vh;
-  width: 100%;
-  background: #e4e4e6;
-  font-family: 'Heebo', system-ui, -apple-system, sans-serif;
-  color: #23232b;
-  position: relative;
-  display: flex;
-  flex-direction: column;
-  overflow-x: hidden;
-}
-
-.screen {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  padding: 20px 18px 28px;
-  max-width: 560px;
-  margin: 0 auto;
-  width: 100%;
-  min-height: 100vh;
-}
-
-/* ---------- buttons ---------- */
-.primary-btn, .secondary-btn, .capture-btn {
-  border: none;
-  border-radius: 18px;
-  padding: 14px 22px;
-  font-family: inherit;
-  font-size: 16px;
-  font-weight: 600;
-  cursor: pointer;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  transition: transform 0.12s ease, box-shadow 0.12s ease, background 0.15s ease;
-}
-.primary-btn {
-  background: #dce2f8;
-  color: #24304f;
-  box-shadow: 0 3px 0 #b9c4ea, 0 6px 14px rgba(36,48,79,0.12);
-}
-.primary-btn:hover { background: #cfd8f5; }
-.primary-btn:active { transform: translateY(2px); box-shadow: 0 1px 0 #b9c4ea, 0 3px 8px rgba(36,48,79,0.12); }
-.primary-btn:disabled { opacity: 0.45; cursor: not-allowed; transform:none; }
-.primary-btn.full { width: 100%; }
-
-.secondary-btn {
-  background: #f2f2f4;
-  color: #45455a;
-  border: 1.5px solid #d3d3da;
-}
-.secondary-btn:hover { background: #ebebee; }
-
-.icon-btn {
-  background: #ffffff;
-  border: none;
-  border-radius: 14px;
-  width: 38px; height: 38px;
-  display: flex; align-items: center; justify-content: center;
-  cursor: pointer;
-  box-shadow: 0 2px 6px rgba(0,0,0,0.08);
-  color: #45455a;
-}
-
-/* ---------- intro ---------- */
-.intro-screen { align-items: center; justify-content: center; text-align: center; gap: 14px; }
-.intro-icon {
-  width: 84px; height: 84px; border-radius: 26px;
-  background: linear-gradient(135deg, #dce2f8, #eef1fc);
-  display: flex; align-items: center; justify-content: center;
-  color: #4a5b9e;
-  box-shadow: 0 8px 24px rgba(74,91,158,0.18);
-  margin-bottom: 6px;
-}
-.intro-screen h1 { font-size: 26px; font-weight: 800; margin: 0; letter-spacing: -0.3px; }
-.intro-sub { color: #5a5a6a; font-size: 15.5px; line-height: 1.6; max-width: 400px; margin: 0 0 10px; }
-.intro-steps { list-style:none; padding:0; margin: 6px 0 22px; display:flex; flex-direction:column; gap:12px; width:100%; max-width:360px; }
-.intro-steps li {
-  display:flex; align-items:center; gap:12px; background:#fff; border-radius:16px; padding:12px 16px;
-  box-shadow: 0 2px 10px rgba(0,0,0,0.05); font-size:14.5px; text-align:right;
-}
-.step-num {
-  flex-shrink:0; width:26px; height:26px; border-radius:50%; background:#dce2f8; color:#24304f;
-  display:flex; align-items:center; justify-content:center; font-weight:700; font-size:13px;
-}
-
-/* ---------- scan ---------- */
-.scan-header { display:flex; align-items:center; justify-content:space-between; margin-bottom: 14px; }
-.scan-progress { display:flex; gap:6px; }
-.dot { width:8px; height:8px; border-radius:50%; background:#c7c7d1; }
-.dot-active { background:#5a6db8; width:20px; border-radius:5px; }
-.dot-done { background:#9aa8de; }
-
-.scan-title { font-size:20px; font-weight:700; margin:0 0 6px; }
-.accent { color:#4a5b9e; }
-.scan-guidance { color:#5a5a6a; font-size:14px; line-height:1.55; margin:0 0 16px; }
-
-.guide-cube-frame {
-  width:100%; height:30vh; max-height:230px; border-radius:22px; overflow:hidden;
-  background: radial-gradient(circle at 50% 40%, #eef1fc, #dce2f8);
-  margin-bottom:14px; touch-action:none;
-}
-.guide-cube-mount { width:100%; height:100%; }
-
-.camera-wrap {
-  position:relative; width:100%; aspect-ratio:1/1; max-height:38vh; border-radius:24px; overflow:hidden;
-  background:#111; box-shadow: 0 6px 24px rgba(0,0,0,0.18); margin-bottom:18px; margin-inline:auto;
-}
-.camera-video { width:100%; height:100%; object-fit:cover; display:block; }
-.camera-error, .camera-loading {
-  position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center;
-  color:#eee; gap:10px; text-align:center; padding:20px; font-size:14px;
-}
-.frame-outline {
-  position:absolute; inset:6%; border:3px dashed rgba(255,255,255,0.65); border-radius:18px;
-  pointer-events:none;
-}
-
-.capture-btn {
-  background:#dce2f8; color:#24304f; width:100%; padding:16px; font-size:17px;
-  box-shadow: 0 3px 0 #b9c4ea, 0 8px 18px rgba(36,48,79,0.15);
-}
-.capture-btn:disabled { opacity:0.5; }
-
-/* ---------- review ---------- */
-.inspect-cube-frame {
-  width:100%; height:32vh; max-height:250px; border-radius:22px; overflow:hidden;
-  background: radial-gradient(circle at 50% 40%, #f2f3f7, #dcdce2);
-  margin-bottom:14px; touch-action:none;
- cursor: pointer; }
-
-.paint-label { font-size:13px; color:#5a5a6a; margin:2px 0 8px; }
-.paint-palette { display:flex; gap:10px; margin-bottom:8px; }
-.paint-swatch {
-  position:relative; flex:1; aspect-ratio:1/1; border-radius:14px; border:3px solid transparent;
-  cursor:pointer; box-shadow: inset 0 0 0 1px rgba(0,0,0,0.12);
-}
-.paint-swatch-active { border-color:#4a5b9e; transform:scale(1.08); }
-.paint-count {
-  position:absolute; bottom:3px; left:50%; transform:translateX(-50%);
-  background:rgba(255,255,255,0.9); color:#23232b; border-radius:8px; font-size:11px; font-weight:700;
-  padding:1px 6px; line-height:1.4;
-}
-.paint-count-bad { background:#ffe0e0; color:#c0392b; }
-.paint-hint { font-size:12px; color:#8a8a98; margin:0 0 18px; line-height:1.5; }
-
-.color-legend { display:flex; flex-wrap:wrap; gap:10px; margin-bottom:16px; }
-.legend-item { display:flex; align-items:center; gap:6px; font-size:12.5px; color:#5a5a6a; }
-.legend-swatch { width:16px; height:16px; border-radius:5px; box-shadow: inset 0 0 0 1px rgba(0,0,0,0.12); }
-
-.face-tabs { display:flex; gap:6px; overflow-x:auto; margin-bottom:16px; padding-bottom:4px; }
-.face-tab {
-  flex-shrink:0; border:none; background:#eeeef1; color:#5a5a6a; padding:8px 14px; border-radius:12px;
-  font-family:inherit; font-size:13.5px; font-weight:600; cursor:pointer;
-}
-.face-tab-active { background:#dce2f8; color:#24304f; }
-
-.review-grid {
-  display:grid; grid-template-columns:repeat(3,1fr); gap:8px; width:100%; max-width:320px;
-  margin: 0 auto 22px; aspect-ratio:1/1;
-}
-.review-cell {
-  border-radius:10px; border:2px solid rgba(0,0,0,0.08); cursor:pointer; aspect-ratio:1/1;
-  box-shadow: inset 0 0 0 1px rgba(255,255,255,0.3);
-}
-.review-cell:active { transform: scale(0.94); }
-
-.review-actions { display:flex; flex-direction:column; gap:10px; margin-top:auto; }
-
-/* ---------- error / invalid ---------- */
-.error-hero { display:flex; flex-direction:column; align-items:center; gap:10px; margin:24px 0 18px; text-align:center; }
-.error-hero h2 { margin:0; font-size:20px; }
-.error-list { display:flex; flex-direction:column; gap:10px; margin-bottom:18px; }
-.error-item { display:flex; align-items:flex-start; gap:10px; background:#fff; border-radius:14px; padding:12px 14px; box-shadow:0 2px 8px rgba(0,0,0,0.05); }
-.error-dot { flex-shrink:0; width:8px; height:8px; border-radius:50%; background:#c0392b; margin-top:7px; }
-.error-item p { margin:0; font-size:14px; line-height:1.5; }
-.error-hint { color:#6a6a7a; font-size:13.5px; line-height:1.6; margin-bottom:20px; }
-
-/* ---------- 3D / player ---------- */
-.player-screen { padding-top:14px; }
-.cube3d-frame {
-  width:100%; aspect-ratio:1/1; max-height:46vh; border-radius:24px; overflow:hidden;
-  background: radial-gradient(circle at 50% 35%, #f2f3f7, #dcdce2);
-  box-shadow: inset 0 0 0 1px rgba(0,0,0,0.04);
-  touch-action:none;
-}
-.cube3d-mount { width:100%; height:100%; }
-
-.move-info-card {
-  background:#fff; border-radius:18px; padding:16px 18px; margin:16px 0; text-align:center;
-  box-shadow: 0 2px 12px rgba(0,0,0,0.06);
-}
-.move-notation { font-size:32px; font-weight:800; color:#24304f; letter-spacing:1px; }
-.move-info-main { margin:4px 0 6px; font-size:14.5px; color:#3a3a48; min-height:20px; }
-.move-counter { margin:0; font-size:12.5px; color:#8a8a98; }
-
-.player-controls { display:flex; align-items:center; justify-content:center; gap:18px; margin-bottom:14px; }
-.player-btn {
-  width:52px; height:52px; border-radius:50%; border:none; background:#fff; color:#3a3a48;
-  display:flex; align-items:center; justify-content:center; cursor:pointer; box-shadow:0 3px 10px rgba(0,0,0,0.1);
-}
-.player-btn:disabled { opacity:0.35; }
-.player-btn-main { width:68px; height:68px; background:#dce2f8; color:#24304f; box-shadow:0 4px 14px rgba(36,48,79,0.22); }
-
-.speed-row { display:flex; align-items:center; gap:10px; font-size:13px; color:#5a5a6a; padding:0 6px; }
-.speed-row input[type=range] { flex:1; accent-color:#5a6db8; }
-
-.solved-banner {
-  margin-top:14px; background:#e4f5e9; color:#1f7a3d; padding:12px 16px; border-radius:14px;
-  display:flex; align-items:center; gap:8px; justify-content:center; font-weight:600; font-size:14.5px;
-}
-
-/* ---------- misc ---------- */
-.overlay-loading {
-  position:fixed; inset:0; background:rgba(228,228,230,0.92); display:flex; flex-direction:column;
-  align-items:center; justify-content:center; gap:14px; z-index:50; font-size:15px; color:#3a3a48;
-}
-.spinner {
-  width:34px; height:34px; border-radius:50%; border:3px solid #c9cfe8; border-top-color:#4a5b9e;
-  animation: spin 0.8s linear infinite;
-}
-@keyframes spin { to { transform: rotate(360deg); } }
-
-.restart-fab {
-  position:fixed; bottom:16px; left:16px; width:42px; height:42px; border-radius:50%; border:none;
-  background:#fff; color:#5a5a6a; box-shadow:0 3px 12px rgba(0,0,0,0.15); display:flex;
-  align-items:center; justify-content:center; cursor:pointer; z-index:20;
-}
-
-@media (min-width: 640px) {
-  .screen { padding-top: 32px; }
-}
-`;
-function StyleInjector() {
-  return /* @__PURE__ */ React.createElement("style", null, STYLES);
-}
-function PlayerScreen({ solution, currentMoveIndex, setCurrentMoveIndex, playing, setPlaying, speed, setSpeed, initialCube, animBusy, setAnimBusy }) {
-  const total = solution.length;
-  const currentMove = currentMoveIndex >= 0 ? solution[currentMoveIndex] : null;
-  const nextMove = currentMoveIndex < total - 1 ? solution[currentMoveIndex + 1] : null;
-  useEffect(() => {
-    if (!playing) return;
-    if (animBusy) return;
-    if (currentMoveIndex >= total - 1) {
-      setPlaying(false);
-      return;
-    }
-    const id = setTimeout(() => setCurrentMoveIndex((i) => Math.min(total - 1, i + 1)), 120);
-    return () => clearTimeout(id);
-  }, [playing, animBusy, currentMoveIndex, total]);
-  return /* @__PURE__ */ React.createElement("div", { className: "screen player-screen" }, /* @__PURE__ */ React.createElement("div", { className: "cube3d-frame" }, /* @__PURE__ */ React.createElement(
-    Cube3D,
-    {
-      initialCube,
-      movesQueue: solution,
-      currentMoveIndex,
-      onAnimStateChange: setAnimBusy,
-      speed
-    }
-  )), /* @__PURE__ */ React.createElement("div", { className: "move-info-card" }, currentMoveIndex < 0 ? /* @__PURE__ */ React.createElement("p", { className: "move-info-main" }, '\u05D4\u05E7\u05D5\u05D1\u05D9\u05D9\u05D4 \u05DB\u05E4\u05D9 \u05E9\u05E0\u05E1\u05E8\u05E7\u05D4. \u05DC\u05D7\u05E5 "\u05D4\u05E4\u05E2\u05DC" \u05DB\u05D3\u05D9 \u05DC\u05D4\u05EA\u05D7\u05D9\u05DC \u05D1\u05E4\u05EA\u05E8\u05D5\u05DF.') : /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement("div", { className: "move-notation" }, currentMove), /* @__PURE__ */ React.createElement("p", { className: "move-info-main" }, moveDescriptionHebrew(currentMove))), /* @__PURE__ */ React.createElement("p", { className: "move-counter" }, "\u05DE\u05D4\u05DC\u05DA ", Math.max(0, currentMoveIndex + 1), " \u05DE\u05EA\u05D5\u05DA ", total)), /* @__PURE__ */ React.createElement("div", { className: "player-controls" }, /* @__PURE__ */ React.createElement("button", { className: "player-btn", onClick: () => setCurrentMoveIndex((i) => Math.max(-1, i - 1)), disabled: currentMoveIndex < 0 || animBusy }, /* @__PURE__ */ React.createElement(SkipForward, { size: 22, style: { transform: "scaleX(-1)" } })), /* @__PURE__ */ React.createElement("button", { className: "player-btn player-btn-main", onClick: () => setPlaying((p) => !p), disabled: currentMoveIndex >= total - 1 }, playing ? /* @__PURE__ */ React.createElement(Pause, { size: 26 }) : /* @__PURE__ */ React.createElement(Play, { size: 26 })), /* @__PURE__ */ React.createElement("button", { className: "player-btn", onClick: () => setCurrentMoveIndex((i) => Math.min(total - 1, i + 1)), disabled: currentMoveIndex >= total - 1 || animBusy }, /* @__PURE__ */ React.createElement(SkipForward, { size: 22 }))), /* @__PURE__ */ React.createElement("div", { className: "speed-row" }, /* @__PURE__ */ React.createElement("span", null, "\u05DE\u05D4\u05D9\u05E8\u05D5\u05EA"), /* @__PURE__ */ React.createElement("input", { type: "range", min: "0.5", max: "3", step: "0.5", value: speed, onChange: (e) => setSpeed(parseFloat(e.target.value)) }), /* @__PURE__ */ React.createElement("span", null, speed, "\xD7")), currentMoveIndex >= total - 1 && /* @__PURE__ */ React.createElement("div", { className: "solved-banner" }, /* @__PURE__ */ React.createElement(CheckCircle2, { size: 20 }), " \u05D4\u05E7\u05D5\u05D1\u05D9\u05D9\u05D4 \u05E4\u05EA\u05D5\u05E8\u05D4!"));
-}
-function IntroScreen({ onStart }) {
-  return /* @__PURE__ */ React.createElement("div", { className: "screen intro-screen" }, /* @__PURE__ */ React.createElement("div", { className: "intro-icon" }, /* @__PURE__ */ React.createElement(Sparkles, { size: 40 })), /* @__PURE__ */ React.createElement("h1", null, "\u05E4\u05D5\u05EA\u05E8 \u05E7\u05D5\u05D1\u05D9\u05D5\u05EA \u05D4\u05D5\u05E0\u05D2\u05E8\u05D9\u05D5\u05EA"), /* @__PURE__ */ React.createElement("p", { className: "intro-sub" }, "\u05E1\u05E8\u05D5\u05E7 \u05D0\u05EA \u05E9\u05E9 \u05D4\u05E4\u05D0\u05D5\u05EA \u05E9\u05DC \u05D4\u05E7\u05D5\u05D1\u05D9\u05D9\u05D4 \u05E9\u05DC\u05DA, \u05D5\u05EA\u05E7\u05D1\u05DC \u05E4\u05EA\u05E8\u05D5\u05DF \u05DE\u05DC\u05D0 \u05E2\u05DD \u05D4\u05D3\u05D2\u05DE\u05D4 \u05EA\u05DC\u05EA-\u05DE\u05DE\u05D3\u05D9\u05EA \u05E6\u05E2\u05D3-\u05D0\u05D7\u05E8-\u05E6\u05E2\u05D3."), /* @__PURE__ */ React.createElement("ul", { className: "intro-steps" }, /* @__PURE__ */ React.createElement("li", null, /* @__PURE__ */ React.createElement("span", { className: "step-num" }, "1"), " \u05E6\u05DC\u05DD \u05DB\u05DC \u05D0\u05D7\u05EA \u05DE\u05E9\u05E9 \u05D4\u05E4\u05D0\u05D5\u05EA"), /* @__PURE__ */ React.createElement("li", null, /* @__PURE__ */ React.createElement("span", { className: "step-num" }, "2"), " \u05D0\u05E9\u05E8 \u05E9\u05D4\u05E6\u05D1\u05E2\u05D9\u05DD \u05D6\u05D5\u05D4\u05D5 \u05E0\u05DB\u05D5\u05DF"), /* @__PURE__ */ React.createElement("li", null, /* @__PURE__ */ React.createElement("span", { className: "step-num" }, "3"), " \u05E6\u05E4\u05D4 \u05D1\u05E4\u05EA\u05E8\u05D5\u05DF \u05D1\u05EA\u05DC\u05EA-\u05DE\u05DE\u05D3, \u05E6\u05E2\u05D3 \u05D0\u05D7\u05E8 \u05E6\u05E2\u05D3")), /* @__PURE__ */ React.createElement("button", { className: "primary-btn full", onClick: onStart }, "\u05D4\u05EA\u05D7\u05DC \u05E1\u05E8\u05D9\u05E7\u05D4"));
-}
-function App() {
-  const [screen, setScreen] = useState("intro");
-  const [faceIdx, setFaceIdx] = useState(0);
-  const [cameraStream, setCameraStream] = useState(null);
-  const [rawCaptures, setRawCaptures] = useState({});
-  const [reviewFaceIdx, setReviewFaceIdx] = useState(0);
-  const [validationResult, setValidationResult] = useState(null);
-  const [solverError, setSolverError] = useState(null);
-  const [solution, setSolution] = useState([]);
-  const [displayCube, setDisplayCube] = useState(null);
-  const [currentMoveIndex, setCurrentMoveIndex] = useState(-1);
-  const [playing, setPlaying] = useState(false);
-  const [speed, setSpeed] = useState(1);
-  const [animBusy, setAnimBusy] = useState(false);
-  const [solverReady, setSolverReady] = useState(false);
-  const [solving, setSolving] = useState(false);
-  useEffect(() => {
-    const id = setTimeout(() => {
-      try {
-        CubeLib.initSolver();
-        setSolverReady(true);
-      } catch (e) {
-        setSolverReady(true);
-      }
-    }, 10);
-    return () => clearTimeout(id);
-  }, []);
-  const handleCapture = (face, colorIndices) => {
-    const next = { ...rawCaptures, [face]: colorIndices };
-    setRawCaptures(next);
-    if (faceIdx < 5) {
-      setFaceIdx(faceIdx + 1);
+  let diag = null;
+  if (errInfo) {
+    if (errInfo.name === "NotFoundError" || errInfo.name === "DevicesNotFoundError") {
+      diag = { title: "\u05DC\u05D0 \u05E0\u05DE\u05E6\u05D0\u05D4 \u05DE\u05E6\u05DC\u05DE\u05D4 \u05D1\u05DE\u05DB\u05E9\u05D9\u05E8 \u05D6\u05D4", lines: ["\u05D6\u05D5 \u05DC\u05D0 \u05D1\u05E2\u05D9\u05D9\u05EA \u05D4\u05E8\u05E9\u05D0\u05D4 - \u05D4\u05DE\u05E2\u05E8\u05DB\u05EA \u05DC\u05D0 \u05DE\u05D6\u05D4\u05D4 \u05D0\u05E3 \u05DE\u05E6\u05DC\u05DE\u05D4 \u05DE\u05D7\u05D5\u05D1\u05E8\u05EA.", "\u05D5\u05D3\u05D0 \u05E9\u05D9\u05E9 \u05DE\u05E6\u05DC\u05DE\u05D4 \u05DE\u05D7\u05D5\u05D1\u05E8\u05EA \u05D5\u05DE\u05D5\u05E4\u05E2\u05DC\u05EA \u05D1\u05DE\u05DB\u05E9\u05D9\u05E8 \u05D6\u05D4 (\u05DC\u05D0 \u05DE\u05DB\u05D5\u05D1\u05D4 \u05D1\u05DE\u05D0\u05E4\u05E9\u05E8\u05D5\u05EA \u05DE\u05E2\u05E8\u05DB\u05EA \u05D4\u05D4\u05E4\u05E2\u05DC\u05D4).", "\u05D0\u05DD \u05D6\u05D4 \u05DE\u05D7\u05E9\u05D1 \u05E0\u05D9\u05D9\u05D3, \u05D1\u05D3\u05D5\u05E7 \u05D1\u05D4\u05D2\u05D3\u05E8\u05D5\u05EA \u05D4\u05DE\u05E2\u05E8\u05DB\u05EA \u05E9\u05D4\u05DE\u05E6\u05DC\u05DE\u05D4 \u05DE\u05D7\u05D5\u05D1\u05E8\u05EA \u05D5\u05DC\u05D0 \u05DE\u05D5\u05E9\u05D1\u05EA\u05EA."] };
+    } else if (errInfo.name === "NotReadableError" || errInfo.name === "TrackStartError") {
+      diag = { title: "\u05D4\u05DE\u05E6\u05DC\u05DE\u05D4 \u05EA\u05E4\u05D5\u05E1\u05D4 \u05D0\u05E6\u05DC \u05EA\u05D5\u05DB\u05E0\u05D4 \u05D0\u05D7\u05E8\u05EA", lines: ["\u05D0\u05E4\u05DC\u05D9\u05E7\u05E6\u05D9\u05D4/\u05D8\u05D0\u05D1 \u05D0\u05D7\u05E8 \u05DB\u05D1\u05E8 \u05DE\u05E9\u05EA\u05DE\u05E9 \u05D1\u05DE\u05E6\u05DC\u05DE\u05D4 \u05DB\u05E8\u05D2\u05E2.", "\u05E1\u05D2\u05D5\u05E8 \u05D0\u05E4\u05DC\u05D9\u05E7\u05E6\u05D9\u05D5\u05EA \u05D0\u05D7\u05E8\u05D5\u05EA \u05E9\u05DE\u05E9\u05EA\u05DE\u05E9\u05D5\u05EA \u05D1\u05DE\u05E6\u05DC\u05DE\u05D4 (\u05DB\u05D2\u05D5\u05DF Zoom, Teams, \u05D8\u05D0\u05D1 \u05D0\u05D7\u05E8 \u05E9\u05DC \u05D4\u05D3\u05E4\u05D3\u05E4\u05DF) \u05D5\u05E0\u05E1\u05D4 \u05E9\u05D5\u05D1."] };
+    } else if (errInfo.name === "OverconstrainedError" || errInfo.name === "ConstraintNotSatisfiedError") {
+      diag = { title: "\u05D4\u05DE\u05E6\u05DC\u05DE\u05D4 \u05E9\u05E0\u05DE\u05E6\u05D0\u05D4 \u05DC\u05D0 \u05EA\u05D5\u05DE\u05DB\u05EA \u05D1\u05D0\u05D9\u05DB\u05D5\u05EA \u05E9\u05D1\u05D9\u05E7\u05E9\u05D5", lines: ["\u05E0\u05E1\u05D4 \u05DC\u05D7\u05E5 \u05E2\u05DC \"\u05E0\u05E1\u05D4 \u05E9\u05D5\u05D1\" \u05DC\u05DE\u05D8\u05D4 - \u05D4\u05D0\u05E4\u05DC\u05D9\u05E7\u05E6\u05D9\u05D4 \u05EA\u05E0\u05E1\u05D4 \u05E9\u05D5\u05D1 \u05E2\u05DD \u05D3\u05E8\u05D9\u05E9\u05D5\u05EA \u05E8\u05DB\u05D5\u05EA \u05D9\u05D5\u05EA\u05E8."] };
+    } else if (errInfo.name === "NotAllowedError" || errInfo.name === "PermissionDeniedError" || errInfo.name === "SecurityError") {
+      diag = { title: "\u05D4\u05D2\u05D9\u05E9\u05D4 \u05DC\u05DE\u05E6\u05DC\u05DE\u05D4 \u05D7\u05E1\u05D5\u05DE\u05D4", lines: [
+        "\u05D0\u05D7\u05E8\u05D9 \u05E9\u05D7\u05D5\u05E1\u05DE\u05D9\u05DD \u05D2\u05D9\u05E9\u05D4 \u05E4\u05E2\u05DD \u05D0\u05D7\u05EA, \u05D4\u05D3\u05E4\u05D3\u05E4\u05DF \u05DC\u05D0 \u05D9\u05E6\u05D9\u05D2 \u05E9\u05D5\u05D1 \u05D0\u05EA \u05D1\u05E7\u05E9\u05EA \u05D4\u05D0\u05D9\u05E9\u05D5\u05E8 \u05E2\u05E6\u05DE\u05D4 - \u05E6\u05E8\u05D9\u05DA \u05DC\u05D0\u05E4\u05E9\u05E8 \u05D9\u05D3\u05E0\u05D9\u05EA \u05D1\u05D4\u05D2\u05D3\u05E8\u05D5\u05EA.",
+        "\u05D1\u05DE\u05D7\u05E9\u05D1/\u05E0\u05D9\u05D9\u05D3: \u05DC\u05D7\u05E5 \u05E2\u05DC \u05D4\u05E1\u05DE\u05DC (\u05DE\u05E0\u05E2\u05D5\u05DC / (i) / \u05D0\u05D9\u05E7\u05D5\u05E0\u05EA \u05DE\u05D9\u05D3\u05E2) \u05DC\u05D9\u05D3 \u05DB\u05EA\u05D5\u05D1\u05EA \u05D4\u05D0\u05EA\u05E8 \u05D1\u05E8\u05D0\u05E9 \u05D4\u05D3\u05E4\u05D3\u05E4\u05DF, \u05DE\u05E6\u05D0 \"\u05DE\u05E6\u05DC\u05DE\u05D4\" \u05D5\u05E9\u05E0\u05D4 \u05DC\u05D0\u05E4\u05E9\u05E8, \u05D5\u05E8\u05E2\u05E0\u05DF.",
+        "\u05D1\u05D8\u05DC\u05E4\u05D5\u05DF: \u05D1\u05D3\u05D5\u05E7 \u05D2\u05DD \u05D1\u05D4\u05D2\u05D3\u05E8\u05D5\u05EA \u05D4\u05DE\u05E2\u05E8\u05DB\u05EA \u05D4\u05DB\u05DC\u05DC\u05D9\u05D5\u05EA \u05E9\u05DC \u05D4\u05D8\u05DC\u05E4\u05D5\u05DF (\u05DC\u05D0 \u05E8\u05E7 \u05D1\u05D3\u05E4\u05D3\u05E4\u05DF) \u05E9\u05D4\u05D3\u05E4\u05D3\u05E4\u05DF \u05DE\u05D5\u05E8\u05E9\u05D4 \u05D2\u05D9\u05E9\u05D4 \u05DC\u05DE\u05E6\u05DC\u05DE\u05D4.",
+        "\u05D0\u05DD \u05D6\u05D4 \u05DE\u05DB\u05E9\u05D9\u05E8 \u05DE\u05E0\u05D5\u05D4\u05DC (\u05D1\u05D9\u05EA \u05E1\u05E4\u05E8/\u05E2\u05D1\u05D5\u05D3\u05D4) - \u05D4\u05DE\u05E0\u05D4\u05DC \u05D4-IT \u05E6\u05E8\u05D9\u05DA \u05DC\u05D0\u05E4\u05E9\u05E8 \u05D2\u05D9\u05E9\u05D4 \u05DC\u05DE\u05E6\u05DC\u05DE\u05D4 \u05DC\u05D0\u05EA\u05E8 \u05D6\u05D4."
+      ] };
     } else {
-      setReviewFaceIdx(0);
-      setScreen("review");
-    }
-  };
-  const handleChangeCell = (face, cellIdx, colorIdx) => {
-    setRawCaptures((prev) => {
-      const arr = prev[face].slice();
-      arr[cellIdx] = (typeof colorIdx === "number")
-        ? colorIdx
-        : (arr[cellIdx] + 1) % CUBE_COLORS.length;
-      return { ...prev, [face]: arr };
-    });
-  };
-  const handleRescanFace = (idxInOrder) => {
-    setFaceIdx(idxInOrder);
-    setScreen("scan");
-  };
-  const runValidationAndSolve = () => {
-    let facelet = "";
-    FACE_ORDER.forEach((f) => {
-      rawCaptures[f].forEach((pIdx) => {
-        facelet += COLOR_LETTERS[pIdx];
-      });
-    });
-    const result = validateCube(facelet);
-    if (!result.valid) {
-      setValidationResult(result);
-      setScreen("invalid");
-      return;
-    }
-    setSolving(true);
-    setTimeout(() => {
-      try {
-        const { solution: sol, geoCube } = solveFromScan(facelet);
-        const withDisplay = geoCube.map((c) => ({
-          ...c,
-          stickers: c.stickers.map((s) => ({ ...s, displayColor: CUBE_COLORS[COLOR_LETTERS.indexOf(s.color)].css }))
-        }));
-        setSolution(sol);
-        setDisplayCube(withDisplay);
-        setCurrentMoveIndex(-1);
-        setSolving(false);
-        setScreen("player");
-      } catch (e) {
-        setSolverError("\u05D0\u05D9\u05E8\u05E2\u05D4 \u05E9\u05D2\u05D9\u05D0\u05D4 \u05D1\u05E4\u05EA\u05E8\u05D5\u05DF \u05D4\u05E7\u05D5\u05D1\u05D9\u05D9\u05D4. \u05E0\u05E1\u05D4 \u05DC\u05E1\u05E8\u05D5\u05E7 \u05E9\u05D5\u05D1.");
-        setSolving(false);
-        setScreen("invalid");
-        setValidationResult({ errors: [{ message: "\u05D0\u05D9\u05E8\u05E2\u05D4 \u05E9\u05D2\u05D9\u05D0\u05D4 \u05E4\u05E0\u05D9\u05DE\u05D9\u05EA \u05D1\u05E2\u05EA \u05E0\u05D9\u05E1\u05D9\u05D5\u05DF \u05DC\u05E4\u05EA\u05D5\u05E8 \u05D0\u05EA \u05D4\u05E7\u05D5\u05D1\u05D9\u05D9\u05D4." }] });
-      }
-    }, 30);
-  };
-  const restart = () => {
-    if (cameraStream) cameraStream.getTracks().forEach((t) => t.stop());
-    setCameraStream(null);
-    setScreen("intro");
-    setFaceIdx(0);
-    setRawCaptures({});
-    setValidationResult(null);
-    setSolution([]);
-    setDisplayCube(null);
-    setCurrentMoveIndex(-1);
-    setPlaying(false);
-  };
-  return /* @__PURE__ */ React.createElement("div", { className: "app-root", dir: "rtl" }, /* @__PURE__ */ React.createElement(StyleInjector, null), screen === "intro" && /* @__PURE__ */ React.createElement(IntroScreen, { onStart: () => setScreen("permission") }), screen === "permission" && /* @__PURE__ */ React.createElement(PermissionScreen, { onGranted: (stream) => {
-    setCameraStream(stream);
-    setFaceIdx(0);
-    setScreen("scan");
-  } }), screen === "scan" && cameraStream && /* @__PURE__ */ React.createElement(
-    ScanScreen,
-    {
-      faceIdx,
-      stream: cameraStream,
-      rawCaptures,
-      onCapture: handleCapture,
-      onBack: () => faceIdx === 0 ? setScreen("intro") : setFaceIdx(faceIdx - 1)
-    }
-  ), screen === "review" && /* @__PURE__ */ React.createElement(
-    ReviewScreen,
-    {
-      rawCaptures,
-      onChangeCell: handleChangeCell,
-      onConfirm: runValidationAndSolve,
-      onRescanFace: handleRescanFace,
-      faceOrderIdx: reviewFaceIdx,
-      setFaceOrderIdx: setReviewFaceIdx
-    }
-  ), screen === "invalid" && validationResult && /* @__PURE__ */ React.createElement(ValidationErrorScreen, { result: validationResult, onBack: () => setScreen("review") }), screen === "player" && displayCube && /* @__PURE__ */ React.createElement(
-    PlayerScreen,
-    {
-      solution,
-      currentMoveIndex,
-      setCurrentMoveIndex,
-      playing,
-      setPlaying,
-      speed,
-      setSpeed,
-      initialCube: displayCube,
-      animBusy,
-      setAnimBusy
-    }
-  ), solving && /* @__PURE__ */ React.createElement("div", { className: "overlay-loading" }, /* @__PURE__ */ React.createElement("div", { className: "spinner" }), /* @__PURE__ */ React.createElement("p", null, "\u05DE\u05D7\u05E9\u05D1 \u05E4\u05EA\u05E8\u05D5\u05DF\u2026")), screen !== "intro" && /* @__PURE__ */ React.createElement("button", { className: "restart-fab", onClick: restart, title: "\u05D4\u05EA\u05D7\u05DC \u05DE\u05D7\u05D3\u05E9" }, /* @__PURE__ */ React.createElement(RotateCcw, { size: 18 })));
-}
-const rootEl = document.getElementById("root");
-const root = ReactDOM.createRoot(rootEl);
-root.render(/* @__PURE__ */ React.createElement(App, null));
-</script>
-</body>
-</html>
+      diag = { title: "\u05D0\u05E8\u0
