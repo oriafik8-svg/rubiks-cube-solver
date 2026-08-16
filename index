@@ -1,0 +1,3662 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+<title>פותר קוביות הונגריות</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js" crossorigin></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js" crossorigin></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js" crossorigin></script>
+<style>
+  html,body{margin:0;padding:0;background:#e4e4e6;}
+  #lib-error{display:none;position:fixed;inset:0;background:#e4e4e6;font-family:system-ui,sans-serif;
+    direction:rtl;align-items:center;justify-content:center;text-align:center;padding:24px;z-index:9999;}
+  #lib-error.show{display:flex;flex-direction:column;gap:12px;}
+  #boot-error{display:none;position:fixed;inset:0;background:#fff5f5;font-family:system-ui,monospace;
+    direction:ltr;text-align:left;padding:16px;overflow:auto;white-space:pre-wrap;word-break:break-word;
+    font-size:12px;color:#900;z-index:9998;}
+  #boot-error.show{display:block;}
+</style>
+</head>
+<body>
+<div id="root"></div>
+<div id="lib-error">
+  <div style="font-size:40px;">⚠️</div>
+  <h2 style="margin:0;">לא ניתן לטעון ספריות מהאינטרנט</h2>
+  <p style="max-width:420px;color:#555;line-height:1.6;">
+    האפליקציה טוענת את React ו-Three.js מרשת ה-CDN של cdnjs.cloudflare.com.
+    ודא שיש חיבור אינטרנט פעיל, ושחוסם פרסומות / VPN / רשת ארגונית לא חוסם את הגישה לכתובת הזו, ואז רענן את הדף.
+  </p>
+</div>
+<div id="boot-error"></div>
+<script>
+  window.addEventListener('load', function() {
+    if (typeof React === 'undefined' || typeof ReactDOM === 'undefined' || typeof THREE === 'undefined') {
+      document.getElementById('lib-error').className = 'show';
+    }
+  });
+  // Surfaces any uncaught error directly on the page (in Hebrew, screenshot-able) instead of only
+  // going to a devtools console most people can't easily reach on mobile.
+  window.addEventListener('error', function(e) {
+    var box = document.getElementById('boot-error');
+    var msg = 'שגיאה: ' + (e.message || 'לא ידוע') +
+      '\nקובץ/שורה: ' + (e.filename || '?') + ':' + (e.lineno || '?') + ':' + (e.colno || '?') +
+      (e.error && e.error.stack ? '\n\n' + e.error.stack : '');
+    box.textContent = (box.textContent ? box.textContent + '\n\n---\n\n' : '') + msg;
+    box.className = 'show';
+  });
+</script>
+<script>
+const { useState, useRef, useEffect, useCallback } = React;
+const Icon = ({ children, size = 20, ...props }) => /* @__PURE__ */ React.createElement("svg", { width: size, height: size, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: "2", strokeLinecap: "round", strokeLinejoin: "round", ...props }, children);
+const Camera = (p) => /* @__PURE__ */ React.createElement(Icon, { ...p }, /* @__PURE__ */ React.createElement("path", { d: "M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2Z" }), /* @__PURE__ */ React.createElement("circle", { cx: "12", cy: "13", r: "4" }));
+const Check = (p) => /* @__PURE__ */ React.createElement(Icon, { ...p }, /* @__PURE__ */ React.createElement("polyline", { points: "20 6 9 17 4 12" }));
+const X = (p) => /* @__PURE__ */ React.createElement(Icon, { ...p }, /* @__PURE__ */ React.createElement("line", { x1: "18", y1: "6", x2: "6", y2: "18" }), /* @__PURE__ */ React.createElement("line", { x1: "6", y1: "6", x2: "18", y2: "18" }));
+const RotateCcw = (p) => /* @__PURE__ */ React.createElement(Icon, { ...p }, /* @__PURE__ */ React.createElement("polyline", { points: "1 4 1 10 7 10" }), /* @__PURE__ */ React.createElement("path", { d: "M3.51 15a9 9 0 1 0 2.13-9.36L1 10" }));
+const Play = (p) => /* @__PURE__ */ React.createElement(Icon, { ...p }, /* @__PURE__ */ React.createElement("polygon", { points: "5 3 19 12 5 21 5 3" }));
+const Pause = (p) => /* @__PURE__ */ React.createElement(Icon, { ...p }, /* @__PURE__ */ React.createElement("rect", { x: "6", y: "4", width: "4", height: "16" }), /* @__PURE__ */ React.createElement("rect", { x: "14", y: "4", width: "4", height: "16" }));
+const SkipBack = (p) => /* @__PURE__ */ React.createElement(Icon, { ...p }, /* @__PURE__ */ React.createElement("polygon", { points: "19 20 9 12 19 4 19 20" }), /* @__PURE__ */ React.createElement("line", { x1: "5", y1: "19", x2: "5", y2: "5" }));
+const SkipForward = (p) => /* @__PURE__ */ React.createElement(Icon, { ...p }, /* @__PURE__ */ React.createElement("polygon", { points: "5 4 15 12 5 20 5 4" }), /* @__PURE__ */ React.createElement("line", { x1: "19", y1: "5", x2: "19", y2: "19" }));
+const ChevronLeft = (p) => /* @__PURE__ */ React.createElement(Icon, { ...p }, /* @__PURE__ */ React.createElement("polyline", { points: "15 18 9 12 15 6" }));
+const ChevronRight = (p) => /* @__PURE__ */ React.createElement(Icon, { ...p }, /* @__PURE__ */ React.createElement("polyline", { points: "9 18 15 12 9 6" }));
+const RefreshCw = (p) => /* @__PURE__ */ React.createElement(Icon, { ...p }, /* @__PURE__ */ React.createElement("polyline", { points: "23 4 23 10 17 10" }), /* @__PURE__ */ React.createElement("polyline", { points: "1 20 1 14 7 14" }), /* @__PURE__ */ React.createElement("path", { d: "M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" }));
+const AlertTriangle = (p) => /* @__PURE__ */ React.createElement(Icon, { ...p }, /* @__PURE__ */ React.createElement("path", { d: "m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z" }), /* @__PURE__ */ React.createElement("line", { x1: "12", y1: "9", x2: "12", y2: "13" }), /* @__PURE__ */ React.createElement("line", { x1: "12", y1: "17", x2: "12.01", y2: "17" }));
+const CheckCircle2 = (p) => /* @__PURE__ */ React.createElement(Icon, { ...p }, /* @__PURE__ */ React.createElement("circle", { cx: "12", cy: "12", r: "10" }), /* @__PURE__ */ React.createElement("path", { d: "m9 12 2 2 4-4" }));
+const Sparkles = (p) => /* @__PURE__ */ React.createElement(Icon, { ...p }, /* @__PURE__ */ React.createElement("path", { d: "m12 3-1.9 5.8a2 2 0 0 1-1.3 1.3L3 12l5.8 1.9a2 2 0 0 1 1.3 1.3L12 21l1.9-5.8a2 2 0 0 1 1.3-1.3L21 12l-5.8-1.9a2 2 0 0 1-1.3-1.3Z" }));
+const CubeLib = (function() {
+  const g = {};
+  (function(module, require, exports) {
+    (function() {
+      var B, BL, BR, Cube, D, DB, DBL, DF, DFR, DL, DLF, DR, DRB, F, FL, FR, L, R, U, UB, UBR, UF, UFL, UL, ULB, UR, URF, centerColor, centerFacelet, cornerColor, cornerFacelet, edgeColor, edgeFacelet;
+      [U, R, F, D, L, B] = [0, 1, 2, 3, 4, 5];
+      [URF, UFL, ULB, UBR, DFR, DLF, DBL, DRB] = [0, 1, 2, 3, 4, 5, 6, 7];
+      [UR, UF, UL, UB, DR, DF, DL, DB, FR, FL, BL, BR] = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11];
+      [centerFacelet, cornerFacelet, edgeFacelet] = (function() {
+        var _B, _D, _F, _L, _R, _U;
+        _U = function(x) {
+          return x - 1;
+        };
+        _R = function(x) {
+          return _U(9) + x;
+        };
+        _F = function(x) {
+          return _R(9) + x;
+        };
+        _D = function(x) {
+          return _F(9) + x;
+        };
+        _L = function(x) {
+          return _D(9) + x;
+        };
+        _B = function(x) {
+          return _L(9) + x;
+        };
+        return [
+          // Centers
+          [
+            4,
+            13,
+            22,
+            31,
+            40,
+            49
+          ],
+          // Corners
+          [
+            [
+              _U(9),
+              _R(1),
+              _F(3)
+            ],
+            [
+              _U(7),
+              _F(1),
+              _L(3)
+            ],
+            [
+              _U(1),
+              _L(1),
+              _B(3)
+            ],
+            [
+              _U(3),
+              _B(1),
+              _R(3)
+            ],
+            [
+              _D(3),
+              _F(9),
+              _R(7)
+            ],
+            [
+              _D(1),
+              _L(9),
+              _F(7)
+            ],
+            [
+              _D(7),
+              _B(9),
+              _L(7)
+            ],
+            [
+              _D(9),
+              _R(9),
+              _B(7)
+            ]
+          ],
+          // Edges
+          [
+            [
+              _U(6),
+              _R(2)
+            ],
+            [
+              _U(8),
+              _F(2)
+            ],
+            [
+              _U(4),
+              _L(2)
+            ],
+            [
+              _U(2),
+              _B(2)
+            ],
+            [
+              _D(6),
+              _R(8)
+            ],
+            [
+              _D(2),
+              _F(8)
+            ],
+            [
+              _D(4),
+              _L(8)
+            ],
+            [
+              _D(8),
+              _B(8)
+            ],
+            [
+              _F(6),
+              _R(4)
+            ],
+            [
+              _F(4),
+              _L(6)
+            ],
+            [
+              _B(6),
+              _L(4)
+            ],
+            [
+              _B(4),
+              _R(6)
+            ]
+          ]
+        ];
+      })();
+      centerColor = ["U", "R", "F", "D", "L", "B"];
+      cornerColor = [["U", "R", "F"], ["U", "F", "L"], ["U", "L", "B"], ["U", "B", "R"], ["D", "F", "R"], ["D", "L", "F"], ["D", "B", "L"], ["D", "R", "B"]];
+      edgeColor = [["U", "R"], ["U", "F"], ["U", "L"], ["U", "B"], ["D", "R"], ["D", "F"], ["D", "L"], ["D", "B"], ["F", "R"], ["F", "L"], ["B", "L"], ["B", "R"]];
+      Cube = (function() {
+        var faceNames, faceNums, parseAlg;
+        class Cube2 {
+          constructor(other) {
+            var x;
+            if (other != null) {
+              this.init(other);
+            } else {
+              this.identity();
+            }
+            this.newCenter = (function() {
+              var k, results;
+              results = [];
+              for (x = k = 0; k <= 5; x = ++k) {
+                results.push(0);
+              }
+              return results;
+            })();
+            this.newCp = (function() {
+              var k, results;
+              results = [];
+              for (x = k = 0; k <= 7; x = ++k) {
+                results.push(0);
+              }
+              return results;
+            })();
+            this.newEp = (function() {
+              var k, results;
+              results = [];
+              for (x = k = 0; k <= 11; x = ++k) {
+                results.push(0);
+              }
+              return results;
+            })();
+            this.newCo = (function() {
+              var k, results;
+              results = [];
+              for (x = k = 0; k <= 7; x = ++k) {
+                results.push(0);
+              }
+              return results;
+            })();
+            this.newEo = (function() {
+              var k, results;
+              results = [];
+              for (x = k = 0; k <= 11; x = ++k) {
+                results.push(0);
+              }
+              return results;
+            })();
+          }
+          init(state) {
+            this.center = state.center.slice(0);
+            this.co = state.co.slice(0);
+            this.ep = state.ep.slice(0);
+            this.cp = state.cp.slice(0);
+            return this.eo = state.eo.slice(0);
+          }
+          identity() {
+            var x;
+            this.center = [0, 1, 2, 3, 4, 5];
+            this.cp = [0, 1, 2, 3, 4, 5, 6, 7];
+            this.co = (function() {
+              var k, results;
+              results = [];
+              for (x = k = 0; k <= 7; x = ++k) {
+                results.push(0);
+              }
+              return results;
+            })();
+            this.ep = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11];
+            return this.eo = (function() {
+              var k, results;
+              results = [];
+              for (x = k = 0; k <= 11; x = ++k) {
+                results.push(0);
+              }
+              return results;
+            })();
+          }
+          toJSON() {
+            return {
+              center: this.center,
+              cp: this.cp,
+              co: this.co,
+              ep: this.ep,
+              eo: this.eo
+            };
+          }
+          asString() {
+            var corner, edge, i, k, l, m, n, o, ori, p, result;
+            result = [];
+            for (i = k = 0; k <= 5; i = ++k) {
+              result[9 * i + 4] = centerColor[this.center[i]];
+            }
+            for (i = l = 0; l <= 7; i = ++l) {
+              corner = this.cp[i];
+              ori = this.co[i];
+              for (n = m = 0; m <= 2; n = ++m) {
+                result[cornerFacelet[i][(n + ori) % 3]] = cornerColor[corner][n];
+              }
+            }
+            for (i = o = 0; o <= 11; i = ++o) {
+              edge = this.ep[i];
+              ori = this.eo[i];
+              for (n = p = 0; p <= 1; n = ++p) {
+                result[edgeFacelet[i][(n + ori) % 2]] = edgeColor[edge][n];
+              }
+            }
+            return result.join("");
+          }
+          static fromString(str) {
+            var col1, col2, cube, i, j, k, l, m, o, ori, p, q, r, ref;
+            cube = new Cube2();
+            for (i = k = 0; k <= 5; i = ++k) {
+              for (j = l = 0; l <= 5; j = ++l) {
+                if (str[9 * i + 4] === centerColor[j]) {
+                  cube.center[i] = j;
+                }
+              }
+            }
+            for (i = m = 0; m <= 7; i = ++m) {
+              for (ori = o = 0; o <= 2; ori = ++o) {
+                if ((ref = str[cornerFacelet[i][ori]]) === "U" || ref === "D") {
+                  break;
+                }
+              }
+              col1 = str[cornerFacelet[i][(ori + 1) % 3]];
+              col2 = str[cornerFacelet[i][(ori + 2) % 3]];
+              for (j = p = 0; p <= 7; j = ++p) {
+                if (col1 === cornerColor[j][1] && col2 === cornerColor[j][2]) {
+                  cube.cp[i] = j;
+                  cube.co[i] = ori % 3;
+                }
+              }
+            }
+            for (i = q = 0; q <= 11; i = ++q) {
+              for (j = r = 0; r <= 11; j = ++r) {
+                if (str[edgeFacelet[i][0]] === edgeColor[j][0] && str[edgeFacelet[i][1]] === edgeColor[j][1]) {
+                  cube.ep[i] = j;
+                  cube.eo[i] = 0;
+                  break;
+                }
+                if (str[edgeFacelet[i][0]] === edgeColor[j][1] && str[edgeFacelet[i][1]] === edgeColor[j][0]) {
+                  cube.ep[i] = j;
+                  cube.eo[i] = 1;
+                  break;
+                }
+              }
+            }
+            return cube;
+          }
+          clone() {
+            return new Cube2(this.toJSON());
+          }
+          // A class method returning a new random cube
+          static random() {
+            return new Cube2().randomize();
+          }
+          isSolved() {
+            var c, cent, clone, e, k, l, m;
+            clone = this.clone();
+            clone.move(clone.upright());
+            for (cent = k = 0; k <= 5; cent = ++k) {
+              if (clone.center[cent] !== cent) {
+                return false;
+              }
+            }
+            for (c = l = 0; l <= 7; c = ++l) {
+              if (clone.cp[c] !== c) {
+                return false;
+              }
+              if (clone.co[c] !== 0) {
+                return false;
+              }
+            }
+            for (e = m = 0; m <= 11; e = ++m) {
+              if (clone.ep[e] !== e) {
+                return false;
+              }
+              if (clone.eo[e] !== 0) {
+                return false;
+              }
+            }
+            return true;
+          }
+          // Multiply this Cube with another Cube, restricted to centers.
+          centerMultiply(other) {
+            var from, k, to;
+            for (to = k = 0; k <= 5; to = ++k) {
+              from = other.center[to];
+              this.newCenter[to] = this.center[from];
+            }
+            [this.center, this.newCenter] = [this.newCenter, this.center];
+            return this;
+          }
+          // Multiply this Cube with another Cube, restricted to corners.
+          cornerMultiply(other) {
+            var from, k, to;
+            for (to = k = 0; k <= 7; to = ++k) {
+              from = other.cp[to];
+              this.newCp[to] = this.cp[from];
+              this.newCo[to] = (this.co[from] + other.co[to]) % 3;
+            }
+            [this.cp, this.newCp] = [this.newCp, this.cp];
+            [this.co, this.newCo] = [this.newCo, this.co];
+            return this;
+          }
+          // Multiply this Cube with another Cube, restricted to edges
+          edgeMultiply(other) {
+            var from, k, to;
+            for (to = k = 0; k <= 11; to = ++k) {
+              from = other.ep[to];
+              this.newEp[to] = this.ep[from];
+              this.newEo[to] = (this.eo[from] + other.eo[to]) % 2;
+            }
+            [this.ep, this.newEp] = [this.newEp, this.ep];
+            [this.eo, this.newEo] = [this.newEo, this.eo];
+            return this;
+          }
+          // Multiply this cube with another Cube
+          multiply(other) {
+            this.centerMultiply(other);
+            this.cornerMultiply(other);
+            this.edgeMultiply(other);
+            return this;
+          }
+          move(arg) {
+            var face, k, l, len, move, power, ref, ref1, x;
+            ref = parseAlg(arg);
+            for (k = 0, len = ref.length; k < len; k++) {
+              move = ref[k];
+              face = move / 3 | 0;
+              power = move % 3;
+              for (x = l = 0, ref1 = power; 0 <= ref1 ? l <= ref1 : l >= ref1; x = 0 <= ref1 ? ++l : --l) {
+                this.multiply(Cube2.moves[face]);
+              }
+            }
+            return this;
+          }
+          upright() {
+            var clone, i, j, k, l, result;
+            clone = this.clone();
+            result = [];
+            for (i = k = 0; k <= 5; i = ++k) {
+              if (clone.center[i] === F) {
+                break;
+              }
+            }
+            switch (i) {
+              case D:
+                result.push("x");
+                break;
+              case U:
+                result.push("x'");
+                break;
+              case B:
+                result.push("x2");
+                break;
+              case R:
+                result.push("y");
+                break;
+              case L:
+                result.push("y'");
+            }
+            if (result.length) {
+              clone.move(result[0]);
+            }
+            for (j = l = 0; l <= 5; j = ++l) {
+              if (clone.center[j] === U) {
+                break;
+              }
+            }
+            switch (j) {
+              case L:
+                result.push("z");
+                break;
+              case R:
+                result.push("z'");
+                break;
+              case D:
+                result.push("z2");
+            }
+            return result.join(" ");
+          }
+          static inverse(arg) {
+            var face, k, len, move, power, result, str;
+            result = (function() {
+              var k2, len2, ref, results;
+              ref = parseAlg(arg);
+              results = [];
+              for (k2 = 0, len2 = ref.length; k2 < len2; k2++) {
+                move = ref[k2];
+                face = move / 3 | 0;
+                power = move % 3;
+                results.push(face * 3 + -(power - 1) + 1);
+              }
+              return results;
+            })();
+            result.reverse();
+            if (typeof arg === "string") {
+              str = "";
+              for (k = 0, len = result.length; k < len; k++) {
+                move = result[k];
+                face = move / 3 | 0;
+                power = move % 3;
+                str += faceNames[face];
+                if (power === 1) {
+                  str += "2";
+                } else if (power === 2) {
+                  str += "'";
+                }
+                str += " ";
+              }
+              return str.substring(0, str.length - 1);
+            } else if (arg.length != null) {
+              return result;
+            } else {
+              return result[0];
+            }
+          }
+        }
+        ;
+        Cube2.prototype.randomize = (function() {
+          var arePermutationsValid, generateValidRandomOrientation, generateValidRandomPermutation, getNumSwaps, isOrientationValid, randint, randomizeOrientation, result, shuffle;
+          randint = function(min, max) {
+            return min + Math.floor(Math.random() * (max - min + 1));
+          };
+          shuffle = function(array) {
+            var currentIndex, randomIndex, temporaryValue;
+            currentIndex = array.length;
+            while (currentIndex !== 0) {
+              randomIndex = randint(0, currentIndex - 1);
+              currentIndex -= 1;
+              temporaryValue = array[currentIndex];
+              [array[currentIndex], array[randomIndex]] = [array[randomIndex], array[currentIndex]];
+            }
+          };
+          getNumSwaps = function(arr) {
+            var cur, cycleLength, i, k, numSwaps, ref, seen, x;
+            numSwaps = 0;
+            seen = (function() {
+              var k2, ref2, results;
+              results = [];
+              for (x = k2 = 0, ref2 = arr.length - 1; 0 <= ref2 ? k2 <= ref2 : k2 >= ref2; x = 0 <= ref2 ? ++k2 : --k2) {
+                results.push(false);
+              }
+              return results;
+            })();
+            while (true) {
+              cur = -1;
+              for (i = k = 0, ref = arr.length - 1; 0 <= ref ? k <= ref : k >= ref; i = 0 <= ref ? ++k : --k) {
+                if (!seen[i]) {
+                  cur = i;
+                  break;
+                }
+              }
+              if (cur === -1) {
+                break;
+              }
+              cycleLength = 0;
+              while (!seen[cur]) {
+                seen[cur] = true;
+                cycleLength++;
+                cur = arr[cur];
+              }
+              numSwaps += cycleLength + 1;
+            }
+            return numSwaps;
+          };
+          arePermutationsValid = function(cp, ep) {
+            var numSwaps;
+            numSwaps = getNumSwaps(ep) + getNumSwaps(cp);
+            return numSwaps % 2 === 0;
+          };
+          generateValidRandomPermutation = function(cp, ep) {
+            shuffle(ep);
+            shuffle(cp);
+            while (!arePermutationsValid(cp, ep)) {
+              shuffle(ep);
+              shuffle(cp);
+            }
+          };
+          randomizeOrientation = function(arr, numOrientations) {
+            var i, k, ori, ref;
+            ori = 0;
+            for (i = k = 0, ref = arr.length - 1; 0 <= ref ? k <= ref : k >= ref; i = 0 <= ref ? ++k : --k) {
+              ori += arr[i] = randint(0, numOrientations - 1);
+            }
+          };
+          isOrientationValid = function(arr, numOrientations) {
+            return arr.reduce(function(a, b) {
+              return a + b;
+            }) % numOrientations === 0;
+          };
+          generateValidRandomOrientation = function(co, eo) {
+            randomizeOrientation(co, 3);
+            while (!isOrientationValid(co, 3)) {
+              randomizeOrientation(co, 3);
+            }
+            randomizeOrientation(eo, 2);
+            while (!isOrientationValid(eo, 2)) {
+              randomizeOrientation(eo, 2);
+            }
+          };
+          result = function() {
+            generateValidRandomPermutation(this.cp, this.ep);
+            generateValidRandomOrientation(this.co, this.eo);
+            return this;
+          };
+          return result;
+        })();
+        Cube2.moves = [
+          {
+            // U
+            center: [0, 1, 2, 3, 4, 5],
+            cp: [
+              UBR,
+              URF,
+              UFL,
+              ULB,
+              DFR,
+              DLF,
+              DBL,
+              DRB
+            ],
+            co: [
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ],
+            ep: [
+              UB,
+              UR,
+              UF,
+              UL,
+              DR,
+              DF,
+              DL,
+              DB,
+              FR,
+              FL,
+              BL,
+              BR
+            ],
+            eo: [
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ]
+          },
+          {
+            // R
+            center: [0, 1, 2, 3, 4, 5],
+            cp: [
+              DFR,
+              UFL,
+              ULB,
+              URF,
+              DRB,
+              DLF,
+              DBL,
+              UBR
+            ],
+            co: [
+              2,
+              0,
+              0,
+              1,
+              1,
+              0,
+              0,
+              2
+            ],
+            ep: [
+              FR,
+              UF,
+              UL,
+              UB,
+              BR,
+              DF,
+              DL,
+              DB,
+              DR,
+              FL,
+              BL,
+              UR
+            ],
+            eo: [
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ]
+          },
+          {
+            // F
+            center: [0, 1, 2, 3, 4, 5],
+            cp: [
+              UFL,
+              DLF,
+              ULB,
+              UBR,
+              URF,
+              DFR,
+              DBL,
+              DRB
+            ],
+            co: [
+              1,
+              2,
+              0,
+              0,
+              2,
+              1,
+              0,
+              0
+            ],
+            ep: [
+              UR,
+              FL,
+              UL,
+              UB,
+              DR,
+              FR,
+              DL,
+              DB,
+              UF,
+              DF,
+              BL,
+              BR
+            ],
+            eo: [
+              0,
+              1,
+              0,
+              0,
+              0,
+              1,
+              0,
+              0,
+              1,
+              1,
+              0,
+              0
+            ]
+          },
+          {
+            // D
+            center: [0, 1, 2, 3, 4, 5],
+            cp: [
+              URF,
+              UFL,
+              ULB,
+              UBR,
+              DLF,
+              DBL,
+              DRB,
+              DFR
+            ],
+            co: [
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ],
+            ep: [
+              UR,
+              UF,
+              UL,
+              UB,
+              DF,
+              DL,
+              DB,
+              DR,
+              FR,
+              FL,
+              BL,
+              BR
+            ],
+            eo: [
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ]
+          },
+          {
+            // L
+            center: [0, 1, 2, 3, 4, 5],
+            cp: [
+              URF,
+              ULB,
+              DBL,
+              UBR,
+              DFR,
+              UFL,
+              DLF,
+              DRB
+            ],
+            co: [
+              0,
+              1,
+              2,
+              0,
+              0,
+              2,
+              1,
+              0
+            ],
+            ep: [
+              UR,
+              UF,
+              BL,
+              UB,
+              DR,
+              DF,
+              FL,
+              DB,
+              FR,
+              UL,
+              DL,
+              BR
+            ],
+            eo: [
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ]
+          },
+          {
+            // B
+            center: [0, 1, 2, 3, 4, 5],
+            cp: [
+              URF,
+              UFL,
+              UBR,
+              DRB,
+              DFR,
+              DLF,
+              ULB,
+              DBL
+            ],
+            co: [
+              0,
+              0,
+              1,
+              2,
+              0,
+              0,
+              2,
+              1
+            ],
+            ep: [
+              UR,
+              UF,
+              UL,
+              BR,
+              DR,
+              DF,
+              DL,
+              BL,
+              FR,
+              FL,
+              UB,
+              DB
+            ],
+            eo: [
+              0,
+              0,
+              0,
+              1,
+              0,
+              0,
+              0,
+              1,
+              0,
+              0,
+              1,
+              1
+            ]
+          },
+          {
+            // E
+            center: [
+              U,
+              F,
+              L,
+              D,
+              B,
+              R
+            ],
+            cp: [
+              URF,
+              UFL,
+              ULB,
+              UBR,
+              DFR,
+              DLF,
+              DBL,
+              DRB
+            ],
+            co: [
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ],
+            ep: [
+              UR,
+              UF,
+              UL,
+              UB,
+              DR,
+              DF,
+              DL,
+              DB,
+              FL,
+              BL,
+              BR,
+              FR
+            ],
+            eo: [
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              1,
+              1,
+              1,
+              1
+            ]
+          },
+          {
+            // M
+            center: [
+              B,
+              R,
+              U,
+              F,
+              L,
+              D
+            ],
+            cp: [
+              URF,
+              UFL,
+              ULB,
+              UBR,
+              DFR,
+              DLF,
+              DBL,
+              DRB
+            ],
+            co: [
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ],
+            ep: [
+              UR,
+              UB,
+              UL,
+              DB,
+              DR,
+              UF,
+              DL,
+              DF,
+              FR,
+              FL,
+              BL,
+              BR
+            ],
+            eo: [
+              0,
+              1,
+              0,
+              1,
+              0,
+              1,
+              0,
+              1,
+              0,
+              0,
+              0,
+              0
+            ]
+          },
+          {
+            // S
+            center: [
+              L,
+              U,
+              F,
+              R,
+              D,
+              B
+            ],
+            cp: [
+              URF,
+              UFL,
+              ULB,
+              UBR,
+              DFR,
+              DLF,
+              DBL,
+              DRB
+            ],
+            co: [
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ],
+            ep: [
+              UL,
+              UF,
+              DL,
+              UB,
+              UR,
+              DF,
+              DR,
+              DB,
+              FR,
+              FL,
+              BL,
+              BR
+            ],
+            eo: [
+              1,
+              0,
+              1,
+              0,
+              1,
+              0,
+              1,
+              0,
+              0,
+              0,
+              0,
+              0
+            ]
+          }
+        ];
+        faceNums = {
+          U: 0,
+          R: 1,
+          F: 2,
+          D: 3,
+          L: 4,
+          B: 5,
+          E: 6,
+          M: 7,
+          S: 8,
+          x: 9,
+          y: 10,
+          z: 11,
+          u: 12,
+          r: 13,
+          f: 14,
+          d: 15,
+          l: 16,
+          b: 17
+        };
+        faceNames = {
+          0: "U",
+          1: "R",
+          2: "F",
+          3: "D",
+          4: "L",
+          5: "B",
+          6: "E",
+          7: "M",
+          8: "S",
+          9: "x",
+          10: "y",
+          11: "z",
+          12: "u",
+          13: "r",
+          14: "f",
+          15: "d",
+          16: "l",
+          17: "b"
+        };
+        parseAlg = function(arg) {
+          var k, len, move, part, power, ref, results;
+          if (typeof arg === "string") {
+            ref = arg.split(/\s+/);
+            results = [];
+            for (k = 0, len = ref.length; k < len; k++) {
+              part = ref[k];
+              if (part.length === 0) {
+                continue;
+              }
+              if (part.length > 2) {
+                throw new Error(`Invalid move: ${part}`);
+              }
+              move = faceNums[part[0]];
+              if (move === void 0) {
+                throw new Error(`Invalid move: ${part}`);
+              }
+              if (part.length === 1) {
+                power = 0;
+              } else {
+                if (part[1] === "2") {
+                  power = 1;
+                } else if (part[1] === "'") {
+                  power = 2;
+                } else {
+                  throw new Error(`Invalid move: ${part}`);
+                }
+              }
+              results.push(move * 3 + power);
+            }
+            return results;
+          } else if (arg.length != null) {
+            return arg;
+          } else {
+            return [arg];
+          }
+        };
+        Cube2.moves.push(new Cube2().move("R M' L'").toJSON());
+        Cube2.moves.push(new Cube2().move("U E' D'").toJSON());
+        Cube2.moves.push(new Cube2().move("F S B'").toJSON());
+        Cube2.moves.push(new Cube2().move("U E'").toJSON());
+        Cube2.moves.push(new Cube2().move("R M'").toJSON());
+        Cube2.moves.push(new Cube2().move("F S").toJSON());
+        Cube2.moves.push(new Cube2().move("D E").toJSON());
+        Cube2.moves.push(new Cube2().move("L M").toJSON());
+        Cube2.moves.push(new Cube2().move("B S'").toJSON());
+        return Cube2;
+      }).call(this);
+      if (typeof module !== "undefined" && module !== null) {
+        module.exports = Cube;
+      } else {
+        this.Cube = Cube;
+      }
+    }).call(this);
+  }).call(g, void 0, void 0, void 0);
+  (function(module, require, exports) {
+    (function() {
+      var B, BL, BR, Cnk, Cube, D, DB, DBL, DF, DFR, DL, DLF, DR, DRB, F, FL, FR, Include, L, N_FLIP, N_FRtoBR, N_PARITY, N_SLICE1, N_SLICE2, N_TWIST, N_UBtoDF, N_URFtoDLF, N_URtoDF, N_URtoUL, R, U, UB, UBR, UF, UFL, UL, ULB, UR, URF, allMoves1, allMoves2, computeMoveTable, computePruningTable, faceNames, faceNums, factorial, key, max, mergeURtoDF, moveTableParams, nextMoves1, nextMoves2, permutationIndex, pruning, pruningTableParams, rotateLeft, rotateRight, value, indexOf = [].indexOf;
+      Cube = this.Cube || require("./cube");
+      [U, R, F, D, L, B] = [0, 1, 2, 3, 4, 5];
+      [URF, UFL, ULB, UBR, DFR, DLF, DBL, DRB] = [0, 1, 2, 3, 4, 5, 6, 7];
+      [UR, UF, UL, UB, DR, DF, DL, DB, FR, FL, BL, BR] = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11];
+      Cnk = function(n, k) {
+        var i, j, s;
+        if (n < k) {
+          return 0;
+        }
+        if (k > n / 2) {
+          k = n - k;
+        }
+        s = 1;
+        i = n;
+        j = 1;
+        while (i !== n - k) {
+          s *= i;
+          s /= j;
+          i--;
+          j++;
+        }
+        return s;
+      };
+      factorial = function(n) {
+        var f, i, m, ref;
+        f = 1;
+        for (i = m = 2, ref = n; 2 <= ref ? m <= ref : m >= ref; i = 2 <= ref ? ++m : --m) {
+          f *= i;
+        }
+        return f;
+      };
+      max = function(a, b) {
+        if (a > b) {
+          return a;
+        } else {
+          return b;
+        }
+      };
+      rotateLeft = function(array, l, r) {
+        var i, m, ref, ref1, tmp;
+        tmp = array[l];
+        for (i = m = ref = l, ref1 = r - 1; ref <= ref1 ? m <= ref1 : m >= ref1; i = ref <= ref1 ? ++m : --m) {
+          array[i] = array[i + 1];
+        }
+        return array[r] = tmp;
+      };
+      rotateRight = function(array, l, r) {
+        var i, m, ref, ref1, tmp;
+        tmp = array[r];
+        for (i = m = ref = r, ref1 = l + 1; ref <= ref1 ? m <= ref1 : m >= ref1; i = ref <= ref1 ? ++m : --m) {
+          array[i] = array[i - 1];
+        }
+        return array[l] = tmp;
+      };
+      permutationIndex = function(context, start, end, fromEnd = false) {
+        var i, maxAll, maxB, maxOur, our, permName;
+        maxOur = end - start;
+        maxB = factorial(maxOur + 1);
+        if (context === "corners") {
+          maxAll = 7;
+          permName = "cp";
+        } else {
+          maxAll = 11;
+          permName = "ep";
+        }
+        our = (function() {
+          var m, ref, results;
+          results = [];
+          for (i = m = 0, ref = maxOur; 0 <= ref ? m <= ref : m >= ref; i = 0 <= ref ? ++m : --m) {
+            results.push(0);
+          }
+          return results;
+        })();
+        return function(index) {
+          var a, b, c, j, k, m, o, p, perm, q, ref, ref1, ref10, ref2, ref3, ref4, ref5, ref6, ref7, ref8, ref9, t, u, w, x, y, z;
+          if (index != null) {
+            for (i = m = 0, ref = maxOur; 0 <= ref ? m <= ref : m >= ref; i = 0 <= ref ? ++m : --m) {
+              our[i] = i + start;
+            }
+            b = index % maxB;
+            a = index / maxB | 0;
+            perm = this[permName];
+            for (i = o = 0, ref1 = maxAll; 0 <= ref1 ? o <= ref1 : o >= ref1; i = 0 <= ref1 ? ++o : --o) {
+              perm[i] = -1;
+            }
+            for (j = p = 1, ref2 = maxOur; 1 <= ref2 ? p <= ref2 : p >= ref2; j = 1 <= ref2 ? ++p : --p) {
+              k = b % (j + 1);
+              b = b / (j + 1) | 0;
+              while (k > 0) {
+                rotateRight(our, 0, j);
+                k--;
+              }
+            }
+            x = maxOur;
+            if (fromEnd) {
+              for (j = q = 0, ref3 = maxAll; 0 <= ref3 ? q <= ref3 : q >= ref3; j = 0 <= ref3 ? ++q : --q) {
+                c = Cnk(maxAll - j, x + 1);
+                if (a - c >= 0) {
+                  perm[j] = our[maxOur - x];
+                  a -= c;
+                  x--;
+                }
+              }
+            } else {
+              for (j = t = ref4 = maxAll; ref4 <= 0 ? t <= 0 : t >= 0; j = ref4 <= 0 ? ++t : --t) {
+                c = Cnk(j, x + 1);
+                if (a - c >= 0) {
+                  perm[j] = our[x];
+                  a -= c;
+                  x--;
+                }
+              }
+            }
+            return this;
+          } else {
+            perm = this[permName];
+            for (i = u = 0, ref5 = maxOur; 0 <= ref5 ? u <= ref5 : u >= ref5; i = 0 <= ref5 ? ++u : --u) {
+              our[i] = -1;
+            }
+            a = b = x = 0;
+            if (fromEnd) {
+              for (j = w = ref6 = maxAll; ref6 <= 0 ? w <= 0 : w >= 0; j = ref6 <= 0 ? ++w : --w) {
+                if (start <= (ref7 = perm[j]) && ref7 <= end) {
+                  a += Cnk(maxAll - j, x + 1);
+                  our[maxOur - x] = perm[j];
+                  x++;
+                }
+              }
+            } else {
+              for (j = y = 0, ref8 = maxAll; 0 <= ref8 ? y <= ref8 : y >= ref8; j = 0 <= ref8 ? ++y : --y) {
+                if (start <= (ref9 = perm[j]) && ref9 <= end) {
+                  a += Cnk(j, x + 1);
+                  our[x] = perm[j];
+                  x++;
+                }
+              }
+            }
+            for (j = z = ref10 = maxOur; ref10 <= 0 ? z <= 0 : z >= 0; j = ref10 <= 0 ? ++z : --z) {
+              k = 0;
+              while (our[j] !== start + j) {
+                rotateLeft(our, 0, j);
+                k++;
+              }
+              b = (j + 1) * b + k;
+            }
+            return a * maxB + b;
+          }
+        };
+      };
+      Include = {
+        // The twist of the 8 corners, 0 <= twist < 3^7. The orientation of
+        // the DRB corner is fully determined by the orientation of the other
+        // corners.
+        twist: function(twist) {
+          var i, m, o, ori, parity, v;
+          if (twist != null) {
+            parity = 0;
+            for (i = m = 6; m >= 0; i = --m) {
+              ori = twist % 3;
+              twist = twist / 3 | 0;
+              this.co[i] = ori;
+              parity += ori;
+            }
+            this.co[7] = (3 - parity % 3) % 3;
+            return this;
+          } else {
+            v = 0;
+            for (i = o = 0; o <= 6; i = ++o) {
+              v = 3 * v + this.co[i];
+            }
+            return v;
+          }
+        },
+        // The flip of the 12 edges, 0 <= flip < 2^11. The orientation of the
+        // BR edge is fully determined by the orientation of the other edges.
+        flip: function(flip) {
+          var i, m, o, ori, parity, v;
+          if (flip != null) {
+            parity = 0;
+            for (i = m = 10; m >= 0; i = --m) {
+              ori = flip % 2;
+              flip = flip / 2 | 0;
+              this.eo[i] = ori;
+              parity += ori;
+            }
+            this.eo[11] = (2 - parity % 2) % 2;
+            return this;
+          } else {
+            v = 0;
+            for (i = o = 0; o <= 10; i = ++o) {
+              v = 2 * v + this.eo[i];
+            }
+            return v;
+          }
+        },
+        // Parity of the corner permutation
+        cornerParity: function() {
+          var i, j, m, o, ref, ref1, ref2, ref3, s;
+          s = 0;
+          for (i = m = ref = DRB, ref1 = URF + 1; ref <= ref1 ? m <= ref1 : m >= ref1; i = ref <= ref1 ? ++m : --m) {
+            for (j = o = ref2 = i - 1, ref3 = URF; ref2 <= ref3 ? o <= ref3 : o >= ref3; j = ref2 <= ref3 ? ++o : --o) {
+              if (this.cp[j] > this.cp[i]) {
+                s++;
+              }
+            }
+          }
+          return s % 2;
+        },
+        // Parity of the edges permutation. Parity of corners and edges are
+        // the same if the cube is solvable.
+        edgeParity: function() {
+          var i, j, m, o, ref, ref1, ref2, ref3, s;
+          s = 0;
+          for (i = m = ref = BR, ref1 = UR + 1; ref <= ref1 ? m <= ref1 : m >= ref1; i = ref <= ref1 ? ++m : --m) {
+            for (j = o = ref2 = i - 1, ref3 = UR; ref2 <= ref3 ? o <= ref3 : o >= ref3; j = ref2 <= ref3 ? ++o : --o) {
+              if (this.ep[j] > this.ep[i]) {
+                s++;
+              }
+            }
+          }
+          return s % 2;
+        },
+        // Permutation of the six corners URF, UFL, ULB, UBR, DFR, DLF
+        URFtoDLF: permutationIndex("corners", URF, DLF),
+        // Permutation of the three edges UR, UF, UL
+        URtoUL: permutationIndex("edges", UR, UL),
+        // Permutation of the three edges UB, DR, DF
+        UBtoDF: permutationIndex("edges", UB, DF),
+        // Permutation of the six edges UR, UF, UL, UB, DR, DF
+        URtoDF: permutationIndex("edges", UR, DF),
+        // Permutation of the equator slice edges FR, FL, BL and BR
+        FRtoBR: permutationIndex("edges", FR, BR, true)
+      };
+      for (key in Include) {
+        value = Include[key];
+        Cube.prototype[key] = value;
+      }
+      computeMoveTable = function(context, coord, size) {
+        var apply, cube, i, inner, j, k, m, move, o, p, ref, results;
+        apply = context === "corners" ? "cornerMultiply" : "edgeMultiply";
+        cube = new Cube();
+        results = [];
+        for (i = m = 0, ref = size - 1; 0 <= ref ? m <= ref : m >= ref; i = 0 <= ref ? ++m : --m) {
+          cube[coord](i);
+          inner = [];
+          for (j = o = 0; o <= 5; j = ++o) {
+            move = Cube.moves[j];
+            for (k = p = 0; p <= 2; k = ++p) {
+              cube[apply](move);
+              inner.push(cube[coord]());
+            }
+            cube[apply](move);
+          }
+          results.push(inner);
+        }
+        return results;
+      };
+      mergeURtoDF = (function() {
+        var a, b;
+        a = new Cube();
+        b = new Cube();
+        return function(URtoUL, UBtoDF) {
+          var i, m;
+          a.URtoUL(URtoUL);
+          b.UBtoDF(UBtoDF);
+          for (i = m = 0; m <= 7; i = ++m) {
+            if (a.ep[i] !== -1) {
+              if (b.ep[i] !== -1) {
+                return -1;
+              } else {
+                b.ep[i] = a.ep[i];
+              }
+            }
+          }
+          return b.URtoDF();
+        };
+      })();
+      N_TWIST = 2187;
+      N_FLIP = 2048;
+      N_PARITY = 2;
+      N_FRtoBR = 11880;
+      N_SLICE1 = 495;
+      N_SLICE2 = 24;
+      N_URFtoDLF = 20160;
+      N_URtoDF = 20160;
+      N_URtoUL = 1320;
+      N_UBtoDF = 1320;
+      Cube.moveTables = {
+        parity: [[1, 0, 1, 1, 0, 1, 1, 0, 1, 1, 0, 1, 1, 0, 1, 1, 0, 1], [0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0]],
+        twist: null,
+        flip: null,
+        FRtoBR: null,
+        URFtoDLF: null,
+        URtoDF: null,
+        URtoUL: null,
+        UBtoDF: null,
+        mergeURtoDF: null
+      };
+      moveTableParams = {
+        // name: [scope, size]
+        twist: ["corners", N_TWIST],
+        flip: ["edges", N_FLIP],
+        FRtoBR: ["edges", N_FRtoBR],
+        URFtoDLF: ["corners", N_URFtoDLF],
+        URtoDF: ["edges", N_URtoDF],
+        URtoUL: ["edges", N_URtoUL],
+        UBtoDF: ["edges", N_UBtoDF],
+        mergeURtoDF: []
+      };
+      Cube.computeMoveTables = function(...tables) {
+        var len, m, name, scope, size, tableName;
+        if (tables.length === 0) {
+          tables = (function() {
+            var results;
+            results = [];
+            for (name in moveTableParams) {
+              results.push(name);
+            }
+            return results;
+          })();
+        }
+        for (m = 0, len = tables.length; m < len; m++) {
+          tableName = tables[m];
+          if (this.moveTables[tableName] !== null) {
+            continue;
+          }
+          if (tableName === "mergeURtoDF") {
+            this.moveTables.mergeURtoDF = (function() {
+              var UBtoDF, URtoUL, o, results;
+              results = [];
+              for (URtoUL = o = 0; o <= 335; URtoUL = ++o) {
+                results.push((function() {
+                  var p, results1;
+                  results1 = [];
+                  for (UBtoDF = p = 0; p <= 335; UBtoDF = ++p) {
+                    results1.push(mergeURtoDF(URtoUL, UBtoDF));
+                  }
+                  return results1;
+                })());
+              }
+              return results;
+            })();
+          } else {
+            [scope, size] = moveTableParams[tableName];
+            this.moveTables[tableName] = computeMoveTable(scope, tableName, size);
+          }
+        }
+        return this;
+      };
+      allMoves1 = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17];
+      nextMoves1 = (function() {
+        var face, lastFace, m, next, o, p, power, results;
+        results = [];
+        for (lastFace = m = 0; m <= 5; lastFace = ++m) {
+          next = [];
+          for (face = o = 0; o <= 5; face = ++o) {
+            if (face !== lastFace && face !== lastFace - 3) {
+              for (power = p = 0; p <= 2; power = ++p) {
+                next.push(face * 3 + power);
+              }
+            }
+          }
+          results.push(next);
+        }
+        return results;
+      })();
+      allMoves2 = [0, 1, 2, 4, 7, 9, 10, 11, 13, 16];
+      nextMoves2 = (function() {
+        var face, lastFace, len, m, next, o, p, power, powers, results;
+        results = [];
+        for (lastFace = m = 0; m <= 5; lastFace = ++m) {
+          next = [];
+          for (face = o = 0; o <= 5; face = ++o) {
+            if (!(face !== lastFace && face !== lastFace - 3)) {
+              continue;
+            }
+            powers = face === 0 || face === 3 ? [0, 1, 2] : [1];
+            for (p = 0, len = powers.length; p < len; p++) {
+              power = powers[p];
+              next.push(face * 3 + power);
+            }
+          }
+          results.push(next);
+        }
+        return results;
+      })();
+      pruning = function(table, index, value2) {
+        var pos, shift, slot;
+        pos = index % 8;
+        slot = index >> 3;
+        shift = pos << 2;
+        if (value2 != null) {
+          table[slot] &= ~(15 << shift);
+          table[slot] |= value2 << shift;
+          return value2;
+        } else {
+          return (table[slot] & 15 << shift) >>> shift;
+        }
+      };
+      computePruningTable = function(phase, size, currentCoords, nextIndex) {
+        var current, depth, done, index, len, m, move, moves, next, o, ref, table, x;
+        table = (function() {
+          var m2, ref2, results;
+          results = [];
+          for (x = m2 = 0, ref2 = Math.ceil(size / 8) - 1; 0 <= ref2 ? m2 <= ref2 : m2 >= ref2; x = 0 <= ref2 ? ++m2 : --m2) {
+            results.push(4294967295);
+          }
+          return results;
+        })();
+        if (phase === 1) {
+          moves = allMoves1;
+        } else {
+          moves = allMoves2;
+        }
+        depth = 0;
+        pruning(table, 0, depth);
+        done = 1;
+        while (done !== size) {
+          for (index = m = 0, ref = size - 1; 0 <= ref ? m <= ref : m >= ref; index = 0 <= ref ? ++m : --m) {
+            if (!(pruning(table, index) === depth)) {
+              continue;
+            }
+            current = currentCoords(index);
+            for (o = 0, len = moves.length; o < len; o++) {
+              move = moves[o];
+              next = nextIndex(current, move);
+              if (pruning(table, next) === 15) {
+                pruning(table, next, depth + 1);
+                done++;
+              }
+            }
+          }
+          depth++;
+        }
+        return table;
+      };
+      Cube.pruningTables = {
+        sliceTwist: null,
+        sliceFlip: null,
+        sliceURFtoDLFParity: null,
+        sliceURtoDFParity: null
+      };
+      pruningTableParams = {
+        // name: [phase, size, currentCoords, nextIndex]
+        sliceTwist: [
+          1,
+          N_SLICE1 * N_TWIST,
+          function(index) {
+            return [
+              index % N_SLICE1,
+              index / N_SLICE1 | 0
+            ];
+          },
+          function(current, move) {
+            var newSlice, newTwist, slice, twist;
+            [
+              slice,
+              twist
+            ] = current;
+            newSlice = Cube.moveTables.FRtoBR[slice * 24][move] / 24 | 0;
+            newTwist = Cube.moveTables.twist[twist][move];
+            return newTwist * N_SLICE1 + newSlice;
+          }
+        ],
+        sliceFlip: [
+          1,
+          N_SLICE1 * N_FLIP,
+          function(index) {
+            return [
+              index % N_SLICE1,
+              index / N_SLICE1 | 0
+            ];
+          },
+          function(current, move) {
+            var flip, newFlip, newSlice, slice;
+            [
+              slice,
+              flip
+            ] = current;
+            newSlice = Cube.moveTables.FRtoBR[slice * 24][move] / 24 | 0;
+            newFlip = Cube.moveTables.flip[flip][move];
+            return newFlip * N_SLICE1 + newSlice;
+          }
+        ],
+        sliceURFtoDLFParity: [
+          2,
+          N_SLICE2 * N_URFtoDLF * N_PARITY,
+          function(index) {
+            return [
+              index % 2,
+              (index / 2 | 0) % N_SLICE2,
+              (index / 2 | 0) / N_SLICE2 | 0
+            ];
+          },
+          function(current, move) {
+            var URFtoDLF, newParity, newSlice, newURFtoDLF, parity, slice;
+            [
+              parity,
+              slice,
+              URFtoDLF
+            ] = current;
+            newParity = Cube.moveTables.parity[parity][move];
+            newSlice = Cube.moveTables.FRtoBR[slice][move];
+            newURFtoDLF = Cube.moveTables.URFtoDLF[URFtoDLF][move];
+            return (newURFtoDLF * N_SLICE2 + newSlice) * 2 + newParity;
+          }
+        ],
+        sliceURtoDFParity: [
+          2,
+          N_SLICE2 * N_URtoDF * N_PARITY,
+          function(index) {
+            return [
+              index % 2,
+              (index / 2 | 0) % N_SLICE2,
+              (index / 2 | 0) / N_SLICE2 | 0
+            ];
+          },
+          function(current, move) {
+            var URtoDF, newParity, newSlice, newURtoDF, parity, slice;
+            [
+              parity,
+              slice,
+              URtoDF
+            ] = current;
+            newParity = Cube.moveTables.parity[parity][move];
+            newSlice = Cube.moveTables.FRtoBR[slice][move];
+            newURtoDF = Cube.moveTables.URtoDF[URtoDF][move];
+            return (newURtoDF * N_SLICE2 + newSlice) * 2 + newParity;
+          }
+        ]
+      };
+      Cube.computePruningTables = function(...tables) {
+        var len, m, name, params, tableName;
+        if (tables.length === 0) {
+          tables = (function() {
+            var results;
+            results = [];
+            for (name in pruningTableParams) {
+              results.push(name);
+            }
+            return results;
+          })();
+        }
+        for (m = 0, len = tables.length; m < len; m++) {
+          tableName = tables[m];
+          if (this.pruningTables[tableName] !== null) {
+            continue;
+          }
+          params = pruningTableParams[tableName];
+          this.pruningTables[tableName] = computePruningTable(...params);
+        }
+        return this;
+      };
+      Cube.initSolver = function() {
+        Cube.computeMoveTables();
+        return Cube.computePruningTables();
+      };
+      Cube.prototype.solveUpright = function(maxDepth = 22) {
+        var State, freeStates, moveNames, phase1, phase1search, phase2, phase2search, solution, state, x;
+        moveNames = (function() {
+          var face, faceName, m, o, power, powerName, result;
+          faceName = ["U", "R", "F", "D", "L", "B"];
+          powerName = ["", "2", "'"];
+          result = [];
+          for (face = m = 0; m <= 5; face = ++m) {
+            for (power = o = 0; o <= 2; power = ++o) {
+              result.push(faceName[face] + powerName[power]);
+            }
+          }
+          return result;
+        })();
+        State = class State {
+          constructor(cube) {
+            this.parent = null;
+            this.lastMove = null;
+            this.depth = 0;
+            if (cube) {
+              this.init(cube);
+            }
+          }
+          init(cube) {
+            this.flip = cube.flip();
+            this.twist = cube.twist();
+            this.slice = cube.FRtoBR() / N_SLICE2 | 0;
+            this.parity = cube.cornerParity();
+            this.URFtoDLF = cube.URFtoDLF();
+            this.FRtoBR = cube.FRtoBR();
+            this.URtoUL = cube.URtoUL();
+            this.UBtoDF = cube.UBtoDF();
+            return this;
+          }
+          solution() {
+            if (this.parent) {
+              return this.parent.solution() + moveNames[this.lastMove] + " ";
+            } else {
+              return "";
+            }
+          }
+          //# Helpers
+          move(table, index, move) {
+            return Cube.moveTables[table][index][move];
+          }
+          pruning(table, index) {
+            return pruning(Cube.pruningTables[table], index);
+          }
+          //# Phase 1
+          // Return the next valid phase 1 moves for this state
+          moves1() {
+            if (this.lastMove !== null) {
+              return nextMoves1[this.lastMove / 3 | 0];
+            } else {
+              return allMoves1;
+            }
+          }
+          // Compute the minimum number of moves to the end of phase 1
+          minDist1() {
+            var d1, d2;
+            d1 = this.pruning("sliceFlip", N_SLICE1 * this.flip + this.slice);
+            d2 = this.pruning("sliceTwist", N_SLICE1 * this.twist + this.slice);
+            return max(d1, d2);
+          }
+          // Compute the next phase 1 state for the given move
+          next1(move) {
+            var next;
+            next = freeStates.pop();
+            next.parent = this;
+            next.lastMove = move;
+            next.depth = this.depth + 1;
+            next.flip = this.move("flip", this.flip, move);
+            next.twist = this.move("twist", this.twist, move);
+            next.slice = this.move("FRtoBR", this.slice * 24, move) / 24 | 0;
+            return next;
+          }
+          //# Phase 2
+          // Return the next valid phase 2 moves for this state
+          moves2() {
+            if (this.lastMove !== null) {
+              return nextMoves2[this.lastMove / 3 | 0];
+            } else {
+              return allMoves2;
+            }
+          }
+          // Compute the minimum number of moves to the solved cube
+          minDist2() {
+            var d1, d2, index1, index2;
+            index1 = (N_SLICE2 * this.URtoDF + this.FRtoBR) * N_PARITY + this.parity;
+            d1 = this.pruning("sliceURtoDFParity", index1);
+            index2 = (N_SLICE2 * this.URFtoDLF + this.FRtoBR) * N_PARITY + this.parity;
+            d2 = this.pruning("sliceURFtoDLFParity", index2);
+            return max(d1, d2);
+          }
+          // Initialize phase 2 coordinates
+          init2(top = true) {
+            if (this.parent === null) {
+              return;
+            }
+            this.parent.init2(false);
+            this.URFtoDLF = this.move("URFtoDLF", this.parent.URFtoDLF, this.lastMove);
+            this.FRtoBR = this.move("FRtoBR", this.parent.FRtoBR, this.lastMove);
+            this.parity = this.move("parity", this.parent.parity, this.lastMove);
+            this.URtoUL = this.move("URtoUL", this.parent.URtoUL, this.lastMove);
+            this.UBtoDF = this.move("UBtoDF", this.parent.UBtoDF, this.lastMove);
+            if (top) {
+              return this.URtoDF = this.move("mergeURtoDF", this.URtoUL, this.UBtoDF);
+            }
+          }
+          // Compute the next phase 2 state for the given move
+          next2(move) {
+            var next;
+            next = freeStates.pop();
+            next.parent = this;
+            next.lastMove = move;
+            next.depth = this.depth + 1;
+            next.URFtoDLF = this.move("URFtoDLF", this.URFtoDLF, move);
+            next.FRtoBR = this.move("FRtoBR", this.FRtoBR, move);
+            next.parity = this.move("parity", this.parity, move);
+            next.URtoDF = this.move("URtoDF", this.URtoDF, move);
+            return next;
+          }
+        };
+        solution = null;
+        phase1search = function(state2) {
+          var depth, m, ref, results;
+          depth = 0;
+          results = [];
+          for (depth = m = 1, ref = maxDepth; 1 <= ref ? m <= ref : m >= ref; depth = 1 <= ref ? ++m : --m) {
+            phase1(state2, depth);
+            if (solution !== null) {
+              break;
+            }
+            results.push(depth++);
+          }
+          return results;
+        };
+        phase1 = function(state2, depth) {
+          var len, m, move, next, ref, ref1, results;
+          if (depth === 0) {
+            if (state2.minDist1() === 0) {
+              if (state2.lastMove === null || (ref = state2.lastMove, indexOf.call(allMoves2, ref) < 0)) {
+                return phase2search(state2);
+              }
+            }
+          } else if (depth > 0) {
+            if (state2.minDist1() <= depth) {
+              ref1 = state2.moves1();
+              results = [];
+              for (m = 0, len = ref1.length; m < len; m++) {
+                move = ref1[m];
+                next = state2.next1(move);
+                phase1(next, depth - 1);
+                freeStates.push(next);
+                if (solution !== null) {
+                  break;
+                } else {
+                  results.push(void 0);
+                }
+              }
+              return results;
+            }
+          }
+        };
+        phase2search = function(state2) {
+          var depth, m, ref, results;
+          state2.init2();
+          results = [];
+          for (depth = m = 1, ref = maxDepth - state2.depth; 1 <= ref ? m <= ref : m >= ref; depth = 1 <= ref ? ++m : --m) {
+            phase2(state2, depth);
+            if (solution !== null) {
+              break;
+            }
+            results.push(depth++);
+          }
+          return results;
+        };
+        phase2 = function(state2, depth) {
+          var len, m, move, next, ref, results;
+          if (depth === 0) {
+            if (state2.minDist2() === 0) {
+              return solution = state2.solution();
+            }
+          } else if (depth > 0) {
+            if (state2.minDist2() <= depth) {
+              ref = state2.moves2();
+              results = [];
+              for (m = 0, len = ref.length; m < len; m++) {
+                move = ref[m];
+                next = state2.next2(move);
+                phase2(next, depth - 1);
+                freeStates.push(next);
+                if (solution !== null) {
+                  break;
+                } else {
+                  results.push(void 0);
+                }
+              }
+              return results;
+            }
+          }
+        };
+        freeStates = (function() {
+          var m, ref, results;
+          results = [];
+          for (x = m = 0, ref = maxDepth + 1; 0 <= ref ? m <= ref : m >= ref; x = 0 <= ref ? ++m : --m) {
+            results.push(new State());
+          }
+          return results;
+        })();
+        state = freeStates.pop().init(this);
+        phase1search(state);
+        freeStates.push(state);
+        if (solution.length > 0) {
+          solution = solution.substring(0, solution.length - 1);
+        }
+        return solution;
+      };
+      faceNums = {
+        U: 0,
+        R: 1,
+        F: 2,
+        D: 3,
+        L: 4,
+        B: 5
+      };
+      faceNames = {
+        0: "U",
+        1: "R",
+        2: "F",
+        3: "D",
+        4: "L",
+        5: "B"
+      };
+      Cube.prototype.solve = function(maxDepth = 22) {
+        var clone, len, m, move, ref, rotation, solution, upright, uprightSolution;
+        clone = this.clone();
+        upright = clone.upright();
+        clone.move(upright);
+        rotation = new Cube().move(upright).center;
+        uprightSolution = clone.solveUpright(maxDepth);
+        solution = [];
+        ref = uprightSolution.split(" ");
+        for (m = 0, len = ref.length; m < len; m++) {
+          move = ref[m];
+          solution.push(faceNames[rotation[faceNums[move[0]]]]);
+          if (move.length > 1) {
+            solution[solution.length - 1] += move[1];
+          }
+        }
+        return solution.join(" ");
+      };
+      Cube.scramble = function() {
+        return Cube.inverse(Cube.random().solve());
+      };
+    }).call(this);
+  }).call(g, void 0, void 0, void 0);
+  return g.Cube;
+})();
+const AXIS_IDX = { x: 0, y: 1, z: 2 };
+const IDENTITY_M = [[1, 0, 0], [0, 1, 0], [0, 0, 1]];
+function matMulVec(m, v) {
+  return [
+    m[0][0] * v[0] + m[0][1] * v[1] + m[0][2] * v[2],
+    m[1][0] * v[0] + m[1][1] * v[1] + m[1][2] * v[2],
+    m[2][0] * v[0] + m[2][1] * v[1] + m[2][2] * v[2]
+  ];
+}
+function matMul(a, b) {
+  const r = [[0, 0, 0], [0, 0, 0], [0, 0, 0]];
+  for (let i = 0; i < 3; i++) for (let j = 0; j < 3; j++) {
+    r[i][j] = a[i][0] * b[0][j] + a[i][1] * b[1][j] + a[i][2] * b[2][j];
+  }
+  return r;
+}
+function faceRotationMatrix(axis, dir) {
+  const s = axis === "y" ? dir : -dir;
+  if (axis === "x") return [[1, 0, 0], [0, 0, -s], [0, s, 0]];
+  if (axis === "y") return [[0, 0, s], [0, 1, 0], [-s, 0, 0]];
+  return [[0, -s, 0], [s, 0, 0], [0, 0, 1]];
+}
+const FACE_INFO = { U: { axis: "y", dir: 1 }, D: { axis: "y", dir: -1 }, R: { axis: "x", dir: 1 }, L: { axis: "x", dir: -1 }, F: { axis: "z", dir: 1 }, B: { axis: "z", dir: -1 } };
+function makeSolvedCube(colorMap) {
+  const cubies = [];
+  for (let x = -1; x <= 1; x++) for (let y = -1; y <= 1; y++) for (let z = -1; z <= 1; z++) {
+    if (x === 0 && y === 0 && z === 0) continue;
+    const stickers = [];
+    if (x === 1) stickers.push({ axis: "x", dir: 1, color: colorMap.R });
+    if (x === -1) stickers.push({ axis: "x", dir: -1, color: colorMap.L });
+    if (y === 1) stickers.push({ axis: "y", dir: 1, color: colorMap.U });
+    if (y === -1) stickers.push({ axis: "y", dir: -1, color: colorMap.D });
+    if (z === 1) stickers.push({ axis: "z", dir: 1, color: colorMap.F });
+    if (z === -1) stickers.push({ axis: "z", dir: -1, color: colorMap.B });
+    cubies.push({ pos: [x, y, z], ori: IDENTITY_M.map((r) => r.slice()), stickers, id: `${x}${y}${z}` });
+  }
+  return cubies;
+}
+function cloneCube(cubies) {
+  return cubies.map((c) => ({ pos: c.pos.slice(), ori: c.ori.map((r) => r.slice()), stickers: c.stickers, id: c.id }));
+}
+function applyMove(cubies, move) {
+  const face = move[0];
+  const mod = move.slice(1);
+  const { axis, dir } = FACE_INFO[face];
+  let turns = 1;
+  if (mod === "'") turns = 3;
+  else if (mod === "2") turns = 2;
+  const M = faceRotationMatrix(axis, dir);
+  const idx = AXIS_IDX[axis];
+  const result = cloneCube(cubies);
+  for (let t = 0; t < turns; t++) {
+    for (const c of result) {
+      if (c.pos[idx] === dir) {
+        c.pos = matMulVec(M, c.pos).map((v) => Math.round(v));
+        c.ori = matMul(M, c.ori);
+      }
+    }
+  }
+  return result;
+}
+function applyMoves(cubies, moves) {
+  let cur = cubies;
+  for (const m of moves) cur = applyMove(cur, m);
+  return cur;
+}
+function getFace(cubies, face) {
+  const { axis, dir } = FACE_INFO[face];
+  const idx = AXIS_IDX[axis];
+  const layer = cubies.filter((c) => c.pos[idx] === dir);
+  function colorFacing(c) {
+    for (const s of c.stickers) {
+      const local = [0, 0, 0];
+      local[AXIS_IDX[s.axis]] = s.dir;
+      const world = matMulVec(c.ori, local).map((v) => Math.round(v));
+      if (world[idx] === dir && world[(idx + 1) % 3] === 0 && world[(idx + 2) % 3] === 0) return s.color;
+    }
+    return null;
+  }
+  return { layer, colorFacing };
+}
+function isFullySolved(cube) {
+  for (const f of ["U", "D", "F", "B", "L", "R"]) {
+    const { layer, colorFacing } = getFace(cube, f);
+    const firstColor = colorFacing(layer[0]);
+    for (const c of layer) if (colorFacing(c) !== firstColor) return false;
+  }
+  return true;
+}
+const GRID_DEF = {
+  U: { r: [1, 0, 0], u: [0, 0, -1] },
+  D: { r: [1, 0, 0], u: [0, 0, 1] },
+  F: { r: [1, 0, 0], u: [0, 1, 0] },
+  B: { r: [-1, 0, 0], u: [0, 1, 0] },
+  R: { r: [0, 0, -1], u: [0, 1, 0] },
+  L: { r: [0, 0, 1], u: [0, 1, 0] }
+};
+function faceLayerPositions(face) {
+  const def = GRID_DEF[face];
+  const { axis, dir } = FACE_INFO[face];
+  const idx = AXIS_IDX[axis];
+  const out = [];
+  for (let row = 1; row >= -1; row--) for (let col = -1; col <= 1; col++) {
+    const pos = [0, 0, 0];
+    pos[idx] = dir;
+    for (let k = 0; k < 3; k++) pos[k] += def.r[k] * col + def.u[k] * row;
+    out.push(pos);
+  }
+  return out;
+}
+const FACE_ORDER = ["U", "R", "F", "D", "L", "B"];
+function cubeToFaceletString(cube) {
+  let s = "";
+  for (const f of FACE_ORDER) {
+    const { colorFacing, layer } = getFace(cube, f);
+    for (const pos of faceLayerPositions(f)) {
+      const c = layer.find((cc) => cc.pos[0] === pos[0] && cc.pos[1] === pos[1] && cc.pos[2] === pos[2]);
+      s += colorFacing(c);
+    }
+  }
+  return s;
+}
+function buildCubeFromFacelets(str) {
+  const cubies = [];
+  const faceletAt = (f, idx) => str[FACE_ORDER.indexOf(f) * 9 + idx];
+  const byId = {};
+  function cubieAt(pos) {
+    const id = `${pos[0]}${pos[1]}${pos[2]}`;
+    if (!byId[id]) {
+      byId[id] = { pos: pos.slice(), ori: IDENTITY_M.map((r) => r.slice()), stickers: [], id };
+      cubies.push(byId[id]);
+    }
+    return byId[id];
+  }
+  for (const f of FACE_ORDER) {
+    const { axis, dir } = FACE_INFO[f];
+    const positions = faceLayerPositions(f);
+    positions.forEach((pos, i) => {
+      const color = faceletAt(f, i);
+      const cubie = cubieAt(pos);
+      cubie.stickers.push({ axis, dir, color });
+    });
+  }
+  return cubies;
+}
+function translateSolverMove(mv) {
+  if (mv === "U") return "U'";
+  if (mv === "U'") return "U";
+  if (mv === "D") return "D'";
+  if (mv === "D'") return "D";
+  return mv;
+}
+function canonicalizeFacelets(str) {
+  const colorToFace = {};
+  FACE_ORDER.forEach((f, i) => {
+    colorToFace[str[CENTER_FACELET[i]]] = f;
+  });
+  return [...str].map((ch) => colorToFace[ch]).join("");
+}
+function solveCube(cube) {
+  const str = canonicalizeFacelets(cubeToFaceletString(cube));
+  const cjsCube = CubeLib.fromString(str);
+  const raw = cjsCube.solve();
+  return raw.trim().split(/\s+/).filter(Boolean).map(translateSolverMove);
+}
+function invertMove(mv) {
+  if (mv.endsWith("'")) return mv[0];
+  if (mv.endsWith("2")) return mv;
+  return mv + "'";
+}
+function solveFromScan(scannedFaceletStr) {
+  const realColorMap = {};
+  FACE_ORDER.forEach((f, i) => {
+    realColorMap[f] = scannedFaceletStr[CENTER_FACELET[i]];
+  });
+  const canonStr = canonicalizeFacelets(scannedFaceletStr);
+  const cjsCube = CubeLib.fromString(canonStr);
+  const raw = cjsCube.solve();
+  const solution = raw.trim().split(/\s+/).filter(Boolean).map(translateSolverMove);
+  const referenceSolved = makeSolvedCube(realColorMap);
+  const inverseSolution = solution.slice().reverse().map(invertMove);
+  const geoCube = applyMoves(referenceSolved, inverseSolution);
+  return { solution, geoCube, referenceSolved };
+}
+const HEB_MOVE_NAMES = {
+  U: "\u05DC\u05DE\u05E2\u05DC\u05D4",
+  D: "\u05DC\u05DE\u05D8\u05D4",
+  F: "\u05E7\u05D3\u05DE\u05D9\u05EA",
+  B: "\u05D0\u05D7\u05D5\u05E8\u05D9\u05EA",
+  L: "\u05E9\u05DE\u05D0\u05DC",
+  R: "\u05D9\u05DE\u05D9\u05DF"
+};
+function moveDescriptionHebrew(mv) {
+  const face = mv[0];
+  const mod = mv.slice(1);
+  const name = HEB_MOVE_NAMES[face];
+  if (mod === "'") return `\u05E1\u05D5\u05D1\u05D1 \u05D0\u05EA \u05D4\u05E4\u05D0\u05D4 ${name} \u05E8\u05D1\u05E2 \u05E1\u05D9\u05D1\u05D5\u05D1 \u05E0\u05D2\u05D3 \u05DB\u05D9\u05D5\u05D5\u05DF \u05D4\u05E9\u05E2\u05D5\u05DF`;
+  if (mod === "2") return `\u05E1\u05D5\u05D1\u05D1 \u05D0\u05EA \u05D4\u05E4\u05D0\u05D4 ${name} \u05D7\u05E6\u05D9 \u05E1\u05D9\u05D1\u05D5\u05D1 (180\xB0)`;
+  return `\u05E1\u05D5\u05D1\u05D1 \u05D0\u05EA \u05D4\u05E4\u05D0\u05D4 ${name} \u05E8\u05D1\u05E2 \u05E1\u05D9\u05D1\u05D5\u05D1 \u05E2\u05DD \u05DB\u05D9\u05D5\u05D5\u05DF \u05D4\u05E9\u05E2\u05D5\u05DF`;
+}
+const CORNER_FACELET = [[8, 9, 20], [6, 18, 38], [0, 36, 47], [2, 45, 11], [29, 26, 15], [27, 44, 24], [33, 53, 42], [35, 17, 51]];
+const EDGE_FACELET = [[5, 10], [7, 19], [3, 37], [1, 46], [32, 16], [28, 25], [30, 43], [34, 52], [23, 12], [21, 41], [50, 39], [48, 14]];
+const CENTER_FACELET = [4, 13, 22, 31, 40, 49];
+const CORNER_COLOR = [["U", "R", "F"], ["U", "F", "L"], ["U", "L", "B"], ["U", "B", "R"], ["D", "F", "R"], ["D", "L", "F"], ["D", "B", "L"], ["D", "R", "B"]];
+const EDGE_COLOR = [["U", "R"], ["U", "F"], ["U", "L"], ["U", "B"], ["D", "R"], ["D", "F"], ["D", "L"], ["D", "B"], ["F", "R"], ["F", "L"], ["B", "L"], ["B", "R"]];
+const CORNER_SLOT_NAMES = ["URF", "UFL", "ULB", "UBR", "DFR", "DLF", "DBL", "DRB"];
+const EDGE_SLOT_NAMES = ["UR", "UF", "UL", "UB", "DR", "DF", "DL", "DB", "FR", "FL", "BL", "BR"];
+function validateCube(str) {
+  const errors = [];
+  if (!str || str.length !== 54) return { valid: false, errors: [{ type: "format", message: "\u05DC\u05D0 \u05E0\u05E1\u05E8\u05E7\u05D5 \u05DB\u05DC 54 \u05D4\u05DE\u05D3\u05D1\u05E7\u05D5\u05EA", faceletIndices: [] }] };
+  const counts = {};
+  for (const ch of str) counts[ch] = (counts[ch] || 0) + 1;
+  const colorsUsed = Object.keys(counts);
+  if (colorsUsed.length !== 6) {
+    errors.push({ type: "colorset", message: `\u05D6\u05D5\u05D4\u05D5 ${colorsUsed.length} \u05E6\u05D1\u05E2\u05D9\u05DD \u05E9\u05D5\u05E0\u05D9\u05DD \u05D1\u05DE\u05E7\u05D5\u05DD 6 - \u05D9\u05D9\u05EA\u05DB\u05DF \u05E9\u05E0\u05D9 \u05D2\u05D5\u05D5\u05E0\u05D9\u05DD \u05D3\u05D5\u05DE\u05D9\u05DD \u05D4\u05D5\u05D6\u05D4\u05D5 \u05DB\u05D0\u05D5\u05EA\u05D5 \u05E6\u05D1\u05E2, \u05D0\u05D5 \u05D4\u05D4\u05E4\u05DA`, faceletIndices: [] });
+  }
+  for (const [color, n] of Object.entries(counts)) {
+    if (n !== 9) {
+      errors.push({ type: "count", color, count: n, message: `\u05D4\u05E6\u05D1\u05E2 \u05DE\u05D5\u05E4\u05D9\u05E2 ${n} \u05E4\u05E2\u05DE\u05D9\u05DD \u05D1\u05DE\u05E7\u05D5\u05DD 9`, faceletIndices: [...str].map((c, i) => c === color ? i : -1).filter((i) => i >= 0) });
+    }
+  }
+  if (errors.length) return { valid: false, errors };
+  const colorToFace = {};
+  FACE_ORDER.forEach((f, i) => {
+    colorToFace[str[CENTER_FACELET[i]]] = f;
+  });
+  if (Object.keys(colorToFace).length !== 6) {
+    return { valid: false, errors: [{ type: "centers", message: "\u05E9\u05E0\u05D9 \u05DE\u05E8\u05DB\u05D6\u05D9 \u05E4\u05D0\u05D5\u05EA \u05DE\u05E6\u05D9\u05D2\u05D9\u05DD \u05D0\u05D5\u05EA\u05D5 \u05E6\u05D1\u05E2 - \u05D1\u05D3\u05D5\u05E7 \u05D0\u05EA \u05D4\u05E1\u05E8\u05D9\u05E7\u05D4", faceletIndices: CENTER_FACELET }] };
+  }
+  const adjacency = {};
+  FACE_ORDER.forEach((f) => adjacency[f] = /* @__PURE__ */ new Set());
+  CORNER_COLOR.forEach((trip) => trip.forEach((a) => trip.forEach((b) => {
+    if (a !== b) adjacency[a].add(b);
+  })));
+  EDGE_COLOR.forEach((pair) => {
+    adjacency[pair[0]].add(pair[1]);
+    adjacency[pair[1]].add(pair[0]);
+  });
+  const opposite = {};
+  FACE_ORDER.forEach((f) => {
+    opposite[f] = FACE_ORDER.find((g) => g !== f && !adjacency[f].has(g));
+  });
+  const canon = [...str].map((ch) => colorToFace[ch]);
+  const cornerPieceAt = [], cornerOriAt = [];
+  for (let i = 0; i < 8; i++) {
+    const facelets = CORNER_FACELET[i].map((idx) => canon[idx]);
+    const set = new Set(facelets);
+    if (set.size !== 3) {
+      errors.push({ type: "corner-duplicate", message: `\u05E4\u05D9\u05E0\u05D4 \u05DC\u05D0 \u05D7\u05D5\u05E7\u05D9\u05EA (${CORNER_SLOT_NAMES[i]}): \u05E9\u05EA\u05D9 \u05DE\u05D3\u05D1\u05E7\u05D5\u05EA \u05D1\u05D0\u05D5\u05EA\u05D5 \u05E6\u05D1\u05E2 \u05E2\u05DC \u05D0\u05D5\u05EA\u05D4 \u05E4\u05D9\u05E0\u05D4`, faceletIndices: CORNER_FACELET[i] });
+      continue;
+    }
+    let badOpp = false;
+    for (const a of facelets) for (const b of facelets) if (a !== b && opposite[a] === b) badOpp = true;
+    if (badOpp) {
+      errors.push({ type: "corner-opposite", message: `\u05E4\u05D9\u05E0\u05D4 \u05DC\u05D0 \u05D7\u05D5\u05E7\u05D9\u05EA (${CORNER_SLOT_NAMES[i]}): \u05E9\u05E0\u05D9 \u05E6\u05D1\u05E2\u05D9\u05DD \u05DE\u05E0\u05D5\u05D2\u05D3\u05D9\u05DD (\u05DB\u05D2\u05D5\u05DF \u05DC\u05D1\u05DF \u05D5\u05E6\u05D4\u05D5\u05D1) \u05E2\u05DC \u05D0\u05D5\u05EA\u05D4 \u05E4\u05D9\u05E0\u05D4`, faceletIndices: CORNER_FACELET[i] });
+      continue;
+    }
+    let found = -1, ori = -1;
+    for (let ref = 0; ref < 8; ref++) {
+      const refColors = CORNER_COLOR[ref];
+      if (refColors.every((c) => set.has(c))) {
+        for (let o = 0; o < 3; o++) if (facelets.every((c, k) => c === refColors[(k + o) % 3])) {
+          found = ref;
+          ori = o;
+          break;
+        }
+        if (found >= 0) break;
+      }
+    }
+    cornerPieceAt[i] = found;
+    cornerOriAt[i] = ori;
+  }
+  if (errors.length) return { valid: false, errors };
+  const cornerUse = new Array(8).fill(0);
+  cornerPieceAt.forEach((p) => cornerUse[p]++);
+  cornerUse.forEach((n, ref) => {
+    if (n === 0) errors.push({ type: "corner-missing", message: `\u05D4\u05E4\u05D9\u05E0\u05D4 \u05E2\u05DD \u05D4\u05E6\u05D1\u05E2\u05D9\u05DD ${CORNER_COLOR[ref].join("/")} \u05D7\u05E1\u05E8\u05D4`, faceletIndices: [] });
+    if (n > 1) errors.push({ type: "corner-dup2", message: `\u05D4\u05E4\u05D9\u05E0\u05D4 \u05E2\u05DD \u05D4\u05E6\u05D1\u05E2\u05D9\u05DD ${CORNER_COLOR[ref].join("/")} \u05DE\u05D5\u05E4\u05D9\u05E2\u05D4 \u05E4\u05E2\u05DE\u05D9\u05D9\u05DD`, faceletIndices: [] });
+  });
+  if (errors.length) return { valid: false, errors };
+  const edgePieceAt = [], edgeOriAt = [];
+  for (let i = 0; i < 12; i++) {
+    const facelets = EDGE_FACELET[i].map((idx) => canon[idx]);
+    if (facelets[0] === facelets[1]) {
+      errors.push({ type: "edge-duplicate", message: `\u05DE\u05E7\u05E6\u05D5\u05E2 \u05DC\u05D0 \u05D7\u05D5\u05E7\u05D9 (${EDGE_SLOT_NAMES[i]}): \u05E9\u05EA\u05D9 \u05DE\u05D3\u05D1\u05E7\u05D5\u05EA \u05D1\u05D0\u05D5\u05EA\u05D5 \u05E6\u05D1\u05E2`, faceletIndices: EDGE_FACELET[i] });
+      continue;
+    }
+    if (opposite[facelets[0]] === facelets[1]) {
+      errors.push({ type: "edge-opposite", message: `\u05DE\u05E7\u05E6\u05D5\u05E2 \u05DC\u05D0 \u05D7\u05D5\u05E7\u05D9 (${EDGE_SLOT_NAMES[i]}): \u05E9\u05E0\u05D9 \u05E6\u05D1\u05E2\u05D9\u05DD \u05DE\u05E0\u05D5\u05D2\u05D3\u05D9\u05DD \u05E2\u05DC \u05D0\u05D5\u05EA\u05D5 \u05DE\u05E7\u05E6\u05D5\u05E2`, faceletIndices: EDGE_FACELET[i] });
+      continue;
+    }
+    let found = -1, ori = -1;
+    for (let ref = 0; ref < 12; ref++) {
+      const rc = EDGE_COLOR[ref];
+      if (rc[0] === facelets[0] && rc[1] === facelets[1]) {
+        found = ref;
+        ori = 0;
+        break;
+      }
+      if (rc[0] === facelets[1] && rc[1] === facelets[0]) {
+        found = ref;
+        ori = 1;
+        break;
+      }
+    }
+    edgePieceAt[i] = found;
+    edgeOriAt[i] = ori;
+  }
+  if (errors.length) return { valid: false, errors };
+  const edgeUse = new Array(12).fill(0);
+  edgePieceAt.forEach((p) => edgeUse[p]++);
+  edgeUse.forEach((n, ref) => {
+    if (n === 0) errors.push({ type: "edge-missing", message: `\u05D4\u05DE\u05E7\u05E6\u05D5\u05E2 \u05E2\u05DD \u05D4\u05E6\u05D1\u05E2\u05D9\u05DD ${EDGE_COLOR[ref].join("/")} \u05D7\u05E1\u05E8`, faceletIndices: [] });
+    if (n > 1) errors.push({ type: "edge-dup2", message: `\u05D4\u05DE\u05E7\u05E6\u05D5\u05E2 \u05E2\u05DD \u05D4\u05E6\u05D1\u05E2\u05D9\u05DD ${EDGE_COLOR[ref].join("/")} \u05DE\u05D5\u05E4\u05D9\u05E2 \u05E4\u05E2\u05DE\u05D9\u05D9\u05DD`, faceletIndices: [] });
+  });
+  if (errors.length) return { valid: false, errors };
+  if (cornerOriAt.reduce((a, b) => a + b, 0) % 3 !== 0) {
+    errors.push({ type: "corner-orientation", message: '\u05DC\u05E4\u05D7\u05D5\u05EA \u05E4\u05D9\u05E0\u05D4 \u05D0\u05D7\u05EA "\u05DE\u05E1\u05D5\u05D1\u05D1\u05EA" \u05D1\u05E6\u05D5\u05E8\u05D4 \u05D1\u05DC\u05EA\u05D9 \u05D0\u05E4\u05E9\u05E8\u05D9\u05EA - \u05E1\u05D9\u05DE\u05DF \u05DC\u05D8\u05E2\u05D5\u05EA \u05D1\u05D6\u05D9\u05D4\u05D5\u05D9 \u05E6\u05D1\u05E2 \u05E9\u05DC \u05E4\u05D9\u05E0\u05D4 \u05D0\u05D7\u05EA', faceletIndices: [] });
+  }
+  if (edgeOriAt.reduce((a, b) => a + b, 0) % 2 !== 0) {
+    errors.push({ type: "edge-orientation", message: '\u05DC\u05E4\u05D7\u05D5\u05EA \u05DE\u05E7\u05E6\u05D5\u05E2 \u05D0\u05D7\u05D3 "\u05D4\u05E4\u05D5\u05DA" \u05D1\u05E6\u05D5\u05E8\u05D4 \u05D1\u05DC\u05EA\u05D9 \u05D0\u05E4\u05E9\u05E8\u05D9\u05EA - \u05E1\u05D9\u05DE\u05DF \u05DC\u05D8\u05E2\u05D5\u05EA \u05D1\u05D6\u05D9\u05D4\u05D5\u05D9 \u05E6\u05D1\u05E2 \u05E9\u05DC \u05DE\u05E7\u05E6\u05D5\u05E2 \u05D0\u05D7\u05D3', faceletIndices: [] });
+  }
+  function permParity(arr) {
+    const seen = new Array(arr.length).fill(false);
+    let parity = 0;
+    for (let i = 0; i < arr.length; i++) {
+      if (seen[i]) continue;
+      let j = i, len = 0;
+      while (!seen[j]) {
+        seen[j] = true;
+        j = arr[j];
+        len++;
+      }
+      if (len > 0) parity += len - 1;
+    }
+    return parity % 2;
+  }
+  if (permParity(cornerPieceAt) !== permParity(edgePieceAt)) {
+    errors.push({ type: "parity", message: "\u05E1\u05D9\u05D3\u05D5\u05E8 \u05D4\u05E7\u05D5\u05D1\u05D9\u05D5\u05EA \u05D1\u05DC\u05EA\u05D9 \u05D0\u05E4\u05E9\u05E8\u05D9 (\u05D6\u05D5\u05D2\u05D9\u05D5\u05EA \u05DC\u05D0 \u05EA\u05D5\u05D0\u05DE\u05EA) - \u05E7\u05E8\u05D5\u05D1 \u05DC\u05D5\u05D5\u05D3\u05D0\u05D9 \u05E9\u05E9\u05EA\u05D9 \u05DE\u05D3\u05D1\u05E7\u05D5\u05EA \u05D4\u05D5\u05D7\u05DC\u05E4\u05D5 \u05D1\u05D6\u05D9\u05D4\u05D5\u05D9, \u05D1\u05D3\u05D5\u05E7 \u05E9\u05D5\u05D1 \u05D0\u05EA \u05D4\u05E4\u05D0\u05D5\u05EA", faceletIndices: [] });
+  }
+  if (errors.length) return { valid: false, errors };
+  return { valid: true };
+}
+const CUBE_COLORS = [
+  { key: "W", name: "\u05DC\u05D1\u05DF", css: "#ffffff", rgb: [255, 255, 255] },
+  { key: "Y", name: "\u05E6\u05D4\u05D5\u05D1", css: "#ffd500", rgb: [255, 213, 0] },
+  { key: "R", name: "\u05D0\u05D3\u05D5\u05DD", css: "#d21f1f", rgb: [210, 31, 31] },
+  { key: "O", name: "\u05DB\u05EA\u05D5\u05DD", css: "#ff8c00", rgb: [255, 140, 0] },
+  { key: "B", name: "\u05DB\u05D7\u05D5\u05DC", css: "#0057d8", rgb: [0, 87, 216] },
+  { key: "G", name: "\u05D9\u05E8\u05D5\u05E7", css: "#00a839", rgb: [0, 168, 57] }
+];
+const COLOR_LETTERS = CUBE_COLORS.map((c) => c.key);
+function colorDist(a, b) {
+  return Math.sqrt((a[0] - b[0]) ** 2 + (a[1] - b[1]) ** 2 + (a[2] - b[2]) ** 2);
+}
+function rgbToCss([r, g, b]) {
+  return `rgb(${r},${g},${b})`;
+}
+function rgbToHsv(r, g, b) {
+  r /= 255;
+  g /= 255;
+  b /= 255;
+  const max = Math.max(r, g, b), min = Math.min(r, g, b), d = max - min;
+  let h = 0;
+  if (d !== 0) {
+    if (max === r) h = (g - b) / d % 6;
+    else if (max === g) h = (b - r) / d + 2;
+    else h = (r - g) / d + 4;
+    h *= 60;
+    if (h < 0) h += 360;
+  }
+  const s = max === 0 ? 0 : d / max;
+  const v = max;
+  return [h, s, v];
+}
+function hueDist(h1, h2) {
+  const d = Math.abs(h1 - h2) % 360;
+  return d > 180 ? 360 - d : d;
+}
+const CUBE_COLORS_HSV = CUBE_COLORS.map((c) => rgbToHsv(...c.rgb));
+const WHITE_IDX = 0;
+function classifyToFixedPalette(rgb) {
+  const [h, s, v] = rgbToHsv(rgb[0], rgb[1], rgb[2]);
+  let best = -1, bestD = Infinity;
+  CUBE_COLORS.forEach((c, i) => {
+    const [rh, rs, rv] = CUBE_COLORS_HSV[i];
+    const hueWeight = Math.min(s, rs);
+    const dh = hueDist(h, rh) / 180 * hueWeight;
+    const ds = Math.abs(s - rs);
+    const dv = Math.abs(v - rv);
+    const d = dh * 3.2 + ds * 1.4 + dv * 1.1;
+    if (d < bestD) {
+      bestD = d;
+      best = i;
+    }
+  });
+  return { index: best, distance: bestD * 130 };
+}
+function toGrayscale(imageData) {
+  const { data, width, height } = imageData;
+  const gray = new Float32Array(width * height);
+  for (let i = 0, p = 0; i < data.length; i += 4, p++) {
+    gray[p] = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
+  }
+  return gray;
+}
+function smooth1D(arr, radius) {
+  const out = new Float32Array(arr.length);
+  for (let i = 0; i < arr.length; i++) {
+    let sum = 0, n = 0;
+    for (let k = -radius; k <= radius; k++) {
+      const j = i + k;
+      if (j >= 0 && j < arr.length) {
+        sum += arr[j];
+        n++;
+      }
+    }
+    out[i] = sum / n;
+  }
+  return out;
+}
+function findTwoMinima(profile, loFrac, hiFrac) {
+  const n = profile.length;
+  const lo = Math.floor(n * loFrac), hi = Math.floor(n * hiFrac);
+  const band1 = [Math.floor(n * 0.22), Math.floor(n * 0.45)];
+  const band2 = [Math.floor(n * 0.55), Math.floor(n * 0.78)];
+  function minInBand([a, b]) {
+    let best = a, bestV = Infinity;
+    for (let i = a; i < b; i++) if (profile[i] < bestV) {
+      bestV = profile[i];
+      best = i;
+    }
+    return { pos: best, val: bestV };
+  }
+  return [minInBand(band1), minInBand(band2)];
+}
+function scoreGridInRegion(gray, data, width, height, x0, y0, size) {
+  const margin = Math.round(size * 0.12);
+  const colProfile = new Float32Array(size);
+  const rowProfile = new Float32Array(size);
+  for (let x = 0; x < size; x++) {
+    let sum = 0, n = 0;
+    for (let y = margin; y < size - margin; y += 2) { sum += gray[(y0 + y) * width + (x0 + x)]; n++; }
+    colProfile[x] = n ? sum / n : 0;
+  }
+  for (let y = 0; y < size; y++) {
+    let sum = 0, n = 0;
+    for (let x = margin; x < size - margin; x += 2) { sum += gray[(y0 + y) * width + (x0 + x)]; n++; }
+    rowProfile[y] = n ? sum / n : 0;
+  }
+  function findMinima(profile) {
+    const n = profile.length;
+    const band1 = [Math.floor(n * 0.2), Math.floor(n * 0.47)];
+    const band2 = [Math.floor(n * 0.53), Math.floor(n * 0.8)];
+    function minIn([a, b]) { let best = a, bv = Infinity; for (let i = a; i < b; i++) if (profile[i] < bv) { bv = profile[i]; best = i; } return { pos: best, val: bv }; }
+    return [minIn(band1), minIn(band2)];
+  }
+  const avg = colProfile.reduce((a, b) => a + b, 0) / size;
+  const [c1, c2] = findMinima(colProfile);
+  const [r1, r2] = findMinima(rowProfile);
+  if (avg < 1) return { score: 0 };
+  const dScore = (avg - Math.max(c1.val, c2.val, r1.val, r2.val)) / avg;
+  const colSpacingErr = Math.abs(c1.pos / size - 1 / 3) + Math.abs(c2.pos / size - 2 / 3);
+  const rowSpacingErr = Math.abs(r1.pos / size - 1 / 3) + Math.abs(r2.pos / size - 2 / 3);
+  const spacingScore = Math.max(0, 1 - (colSpacingErr + rowSpacingErr) * 2.2);
+  const lineScore = Math.max(0, dScore) * spacingScore;
+  // Purity signal: real cube stickers are flat plastic color (low pixel-to-pixel variance within
+  // a cell); textured backgrounds (wood grain, brick, skin, fabric) vary more even within a small
+  // patch. This only ever BOOSTS an already-present grid-line signal - a flat, textureless wall
+  // has perfect "purity" too, so purity alone must never be enough to pass on its own.
+  const colB = [0, c1.pos, c2.pos, size], rowB = [0, r1.pos, r2.pos, size];
+  let totalVariance = 0, cellCount = 0;
+  for (let row = 0; row < 3; row++) for (let col = 0; col < 3; col++) {
+    const cx0 = x0 + colB[col], cx1 = x0 + colB[col + 1], cy0 = y0 + rowB[row], cy1 = y0 + rowB[row + 1];
+    const cw = cx1 - cx0, ch = cy1 - cy0;
+    if (cw < 6 || ch < 6) continue;
+    const pts = [];
+    for (let fy = 0.3; fy <= 0.71; fy += 0.2) for (let fx = 0.3; fx <= 0.71; fx += 0.2) {
+      const px = Math.round(cx0 + cw * fx), py = Math.round(cy0 + ch * fy);
+      const i = (py * width + px) * 4;
+      pts.push([data[i], data[i + 1], data[i + 2]]);
+    }
+    const mean = pts.reduce((a, p) => [a[0] + p[0], a[1] + p[1], a[2] + p[2]], [0, 0, 0]).map((v) => v / pts.length);
+    const variance = pts.reduce((a, p) => a + ((p[0] - mean[0]) ** 2 + (p[1] - mean[1]) ** 2 + (p[2] - mean[2]) ** 2), 0) / pts.length;
+    totalVariance += Math.sqrt(variance);
+    cellCount++;
+  }
+  const avgCellStd = cellCount ? totalVariance / cellCount : 999;
+  const purityScore = Math.max(0, 1 - avgCellStd / 45);
+  const score = lineScore * (0.55 + 0.45 * purityScore);
+  return { score, lineScore, purityScore, colBoundaries: colB, rowBoundaries: rowB };
+}
+// Finds where in the photo the cube actually is (as opposed to background), by searching for the
+// physical signature of a cube face - a 3x3 grid of roughly evenly-spaced dark gaps between flat-
+// colored cells - at several candidate sizes AND positions (roughly centered, with some tolerance,
+// matching the on-screen framing guide but not requiring pixel-perfect alignment). This is far
+// more reliable than classifying by raw color, since ordinary backgrounds (skin, wood, walls) can
+// easily share a hue with one of the six cube colors, but essentially never form a clean, flat-
+// colored grid.
+const CUBE_REGION_CONFIDENCE_MIN = 0.3;
+function detectCubeRegion(imageData) {
+  const { width, height, data } = imageData;
+  const gray = toGrayscale(imageData);
+  const frameSize = Math.min(width, height);
+  const cx0 = width / 2, cy0 = height / 2;
+  let best = null;
+  const offsets = [0, -0.08, 0.08];
+  for (let frac = 1; frac >= 0.42; frac -= 0.06) {
+    const size = Math.round(frameSize * frac);
+    for (const ox of offsets) for (const oy of offsets) {
+      const cx = cx0 + ox * size, cy = cy0 + oy * size;
+      const x0 = Math.round(cx - size / 2), y0 = Math.round(cy - size / 2);
+      if (x0 < 0 || y0 < 0 || x0 + size > width || y0 + size > height) continue;
+      const result = scoreGridInRegion(gray, data, width, height, x0, y0, size);
+      if (!best || result.score > best.score) best = { ...result, x0, y0, size };
+    }
+  }
+  if (!best || best.score < CUBE_REGION_CONFIDENCE_MIN) return { found: false };
+  return { found: true, x0: best.x0, y0: best.y0, size: best.size, colBoundaries: best.colBoundaries.map((v) => v + best.x0), rowBoundaries: best.rowBoundaries.map((v) => v + best.y0), score: best.score };
+}
+function sampleAverageColor(imageData, cx, cy, radius) {
+  const { data, width, height } = imageData;
+  let r = 0, g = 0, b = 0, n = 0;
+  const x0 = Math.max(0, Math.round(cx - radius)), x1 = Math.min(width - 1, Math.round(cx + radius));
+  const y0 = Math.max(0, Math.round(cy - radius)), y1 = Math.min(height - 1, Math.round(cy + radius));
+  for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) {
+    const i = (y * width + x) * 4;
+    r += data[i];
+    g += data[i + 1];
+    b += data[i + 2];
+    n++;
+  }
+  return n ? [Math.round(r / n), Math.round(g / n), Math.round(b / n)] : [0, 0, 0];
+}
+function sampleCellRobust(imageData, x0, x1, y0, y1) {
+  const w = x1 - x0, h = y1 - y0;
+  const pointFracs = [[0.28, 0.28], [0.72, 0.28], [0.28, 0.72], [0.72, 0.72], [0.5, 0.22], [0.5, 0.78], [0.22, 0.5], [0.78, 0.5]];
+  const radius = Math.min(w, h) * 0.11;
+  const samples = pointFracs.map(([fx, fy]) => sampleAverageColor(imageData, x0 + w * fx, y0 + h * fy, radius));
+  const classified = samples.map((rgb) => classifyToFixedPalette(rgb));
+  const votes = new Array(CUBE_COLORS.length).fill(0);
+  classified.forEach((c) => votes[c.index]++);
+  let winner = 0;
+  for (let i = 1; i < votes.length; i++) if (votes[i] > votes[winner]) winner = i;
+  const agreeing = samples.filter((_, i) => classified[i].index === winner);
+  const avgRgb = agreeing.reduce((acc, rgb) => [acc[0] + rgb[0], acc[1] + rgb[1], acc[2] + rgb[2]], [0, 0, 0]).map((v) => Math.round(v / agreeing.length));
+  const avgDistance = classified.filter((c, i) => classified[i].index === winner).reduce((a, c) => a + c.distance, 0) / agreeing.length;
+  return { index: winner, rgb: avgRgb, distance: avgDistance, agreement: agreeing.length / samples.length };
+}
+const NOT_A_CUBE_DISTANCE = 130;
+function analyzeFaceCapture(imageData) {
+  const region = detectCubeRegion(imageData);
+  if (!region.found) {
+    return { colorIndices: null, rgbs: null, looksLikeCube: false, reason: "no-cube-found" };
+  }
+  const { colBoundaries, rowBoundaries } = region;
+  const colorIndices = [];
+  const rgbs = [];
+  const distances = [];
+  for (let row = 0; row < 3; row++) for (let col = 0; col < 3; col++) {
+    const x0 = colBoundaries[col], x1 = colBoundaries[col + 1];
+    const y0 = rowBoundaries[row], y1 = rowBoundaries[row + 1];
+    const { index, rgb, distance } = sampleCellRobust(imageData, x0, x1, y0, y1);
+    colorIndices.push(index);
+    rgbs.push(rgb);
+    distances.push(distance);
+  }
+  const badCells = distances.filter((d) => d > NOT_A_CUBE_DISTANCE).length;
+  const looksLikeCube = badCells <= 4;
+  return { colorIndices, rgbs, looksLikeCube, reason: looksLikeCube ? null : "bad-colors", region };
+}
+const FACE_SEQUENCE = ["F", "R", "B", "L", "U", "D"];
+const FACE_LABEL_HE = { U: "\u05E2\u05DC\u05D9\u05D5\u05E0\u05D4", R: "\u05D9\u05DE\u05E0\u05D9\u05EA", F: "\u05E7\u05D3\u05DE\u05D9\u05EA", D: "\u05EA\u05D7\u05EA\u05D5\u05E0\u05D4", L: "\u05E9\u05DE\u05D0\u05DC\u05D9\u05EA", B: "\u05D0\u05D7\u05D5\u05E8\u05D9\u05EA" };
+const FACE_GUIDANCE_HE = {
+  F: "\u05D4\u05EA\u05D7\u05DC \u05DB\u05DA \u05E9\u05D4\u05E4\u05D0\u05D4 \u05D4\u05E7\u05D3\u05DE\u05D9\u05EA \u05E9\u05DC \u05D4\u05E7\u05D5\u05D1\u05D9\u05D9\u05D4 (\u05DB\u05DC \u05E4\u05D0\u05D4 \u05E9\u05EA\u05D1\u05D7\u05E8) \u05E4\u05D5\u05E0\u05D4 \u05D9\u05E9\u05E8 \u05D0\u05DC\u05D9\u05DA, \u05DE\u05D5\u05DC \u05D4\u05DE\u05E6\u05DC\u05DE\u05D4, \u05E2\u05DD \u05D4\u05D7\u05DC\u05E7 \u05D4\u05E2\u05DC\u05D9\u05D5\u05DF \u05E9\u05DC \u05D4\u05E7\u05D5\u05D1\u05D9\u05D9\u05D4 \u05DB\u05DC\u05E4\u05D9 \u05DE\u05E2\u05DC\u05D4 - \u05D1\u05D3\u05D9\u05D5\u05E7 \u05DB\u05DE\u05D5 \u05E7\u05D5\u05D1\u05D9\u05D9\u05EA \u05D4-3D \u05DC\u05DE\u05E2\u05DC\u05D4.",
+  R: "\u05E1\u05D5\u05D1\u05D1 \u05D0\u05EA \u05D4\u05E7\u05D5\u05D1\u05D9\u05D9\u05D4 \u05E9\u05DE\u05D0\u05DC\u05D4 (\u05E1\u05D1\u05D9\u05D1 \u05D4\u05E6\u05D9\u05E8 \u05D4\u05D0\u05E0\u05DB\u05D9) \u05E8\u05D1\u05E2 \u05E1\u05D9\u05D1\u05D5\u05D1, \u05DB\u05DA \u05E9\u05D4\u05E4\u05D0\u05D4 \u05E9\u05D4\u05D9\u05D9\u05EA\u05D4 \u05DE\u05D9\u05DE\u05D9\u05DF \u05EA\u05E4\u05E0\u05D4 \u05D0\u05DC\u05D9\u05DA \u05E2\u05DB\u05E9\u05D9\u05D5 - \u05E2\u05E7\u05D5\u05D1 \u05D0\u05D7\u05E8\u05D9 \u05E7\u05D5\u05D1\u05D9\u05D9\u05EA \u05D4-3D.",
+  B: "\u05D4\u05DE\u05E9\u05DA \u05DC\u05E1\u05D5\u05D1\u05D1 \u05D0\u05EA \u05D4\u05E7\u05D5\u05D1\u05D9\u05D9\u05D4 \u05D1\u05D0\u05D5\u05EA\u05D5 \u05DB\u05D9\u05D5\u05D5\u05DF \u05E2\u05D5\u05D3 \u05E8\u05D1\u05E2 \u05E1\u05D9\u05D1\u05D5\u05D1, \u05DB\u05DA \u05E9\u05D4\u05E4\u05D0\u05D4 \u05D4\u05D0\u05D7\u05D5\u05E8\u05D9\u05EA \u05EA\u05E4\u05E0\u05D4 \u05D0\u05DC\u05D9\u05DA.",
+  L: "\u05D4\u05DE\u05E9\u05DA \u05DC\u05E1\u05D5\u05D1\u05D1 \u05E2\u05D5\u05D3 \u05E8\u05D1\u05E2 \u05E1\u05D9\u05D1\u05D5\u05D1 \u05D1\u05D0\u05D5\u05EA\u05D5 \u05DB\u05D9\u05D5\u05D5\u05DF, \u05DB\u05DA \u05E9\u05D4\u05E4\u05D0\u05D4 \u05D4\u05E9\u05DE\u05D0\u05DC\u05D9\u05EA \u05EA\u05E4\u05E0\u05D4 \u05D0\u05DC\u05D9\u05DA.",
+  U: "\u05E2\u05DB\u05E9\u05D9\u05D5 \u05D4\u05D8\u05D4 \u05D0\u05EA \u05D4\u05E7\u05D5\u05D1\u05D9\u05D9\u05D4 \u05E7\u05D3\u05D9\u05DE\u05D4 (\u05E1\u05D5\u05D1\u05D1 \u05E1\u05D1\u05D9\u05D1 \u05E6\u05D9\u05E8 \u05D0\u05D5\u05E4\u05E7\u05D9) \u05DB\u05DA \u05E9\u05D4\u05E4\u05D0\u05D4 \u05D4\u05E2\u05DC\u05D9\u05D5\u05E0\u05D4 \u05EA\u05E4\u05E0\u05D4 \u05D0\u05DC\u05D9\u05DA, \u05DE\u05D5\u05DC \u05D4\u05DE\u05E6\u05DC\u05DE\u05D4.",
+  D: "\u05D4\u05D8\u05D4 \u05D0\u05EA \u05D4\u05E7\u05D5\u05D1\u05D9\u05D9\u05D4 \u05E2\u05D5\u05D3, \u05D0\u05D5 \u05D4\u05E4\u05D5\u05DA \u05D0\u05D5\u05EA\u05D4, \u05DB\u05DA \u05E9\u05D4\u05E4\u05D0\u05D4 \u05D4\u05EA\u05D7\u05EA\u05D5\u05E0\u05D4 \u05EA\u05E4\u05E0\u05D4 \u05D0\u05DC\u05D9\u05DA, \u05DE\u05D5\u05DC \u05D4\u05DE\u05E6\u05DC\u05DE\u05D4."
+};
+const FACE_NORMAL = { U: [0, 1, 0], D: [0, -1, 0], F: [0, 0, 1], B: [0, 0, -1], R: [1, 0, 0], L: [-1, 0, 0] };
+function faceViewMatrix(face) {
+  const { r, u } = GRID_DEF[face];
+  const n = FACE_NORMAL[face];
+  return [r.slice(), u.slice(), n.slice()];
+}
+function PermissionScreen({ onGranted }) {
+  const [state, setState] = useState("idle");
+  const [errInfo, setErrInfo] = useState(null); // { name, message }
+  const [attempt, setAttempt] = useState(0);
+  const insecureContext = !window.isSecureContext;
+  const noMediaApi = !(navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
+  const requestCamera = () => {
+    setState("requesting");
+    setErrInfo(null);
+    navigator.mediaDevices.getUserMedia({
+      video: { facingMode: { ideal: "environment" }, width: { ideal: 1280 }, height: { ideal: 1280 } }
+    }).then((stream) => {
+      onGranted(stream);
+    }).catch((err) => {
+      setState("denied");
+      setAttempt((a) => a + 1);
+      setErrInfo({ name: err && err.name ? err.name : "Unknown", message: err && err.message ? err.message : "" });
+    });
+  };
+  if (insecureContext || noMediaApi) {
+    return /* @__PURE__ */ React.createElement("div", { className: "screen intro-screen" }, /* @__PURE__ */ React.createElement("div", { className: "intro-icon" }, /* @__PURE__ */ React.createElement(AlertTriangle, { size: 38 })), /* @__PURE__ */ React.createElement("h1", null, "\u05E0\u05D3\u05E8\u05E9 \u05D7\u05D9\u05D1\u05D5\u05E8 \u05DE\u05D0\u05D5\u05D1\u05D8\u05D7"), /* @__PURE__ */ React.createElement("p", { className: "intro-sub" }, "\u05D4\u05D3\u05E4\u05D3\u05E4\u05DF \u05D7\u05D5\u05E1\u05DD \u05D2\u05D9\u05E9\u05D4 \u05DC\u05DE\u05E6\u05DC\u05DE\u05D4 \u05DE\u05E7\u05D1\u05E6\u05D9\u05DD \u05E9\u05E0\u05E4\u05EA\u05D7\u05D9\u05DD \u05D9\u05E9\u05D9\u05E8\u05D5\u05EA \u05DE\u05D4\u05D3\u05D9\u05E1\u05E7 (", /* @__PURE__ */ React.createElement("code", null, "file://"), ") \u05D0\u05D5 \u05DE\u05D0\u05EA\u05E8\u05D9\u05DD \u05D1\u05DC\u05D9 HTTPS - \u05D6\u05D5 \u05DC\u05D0 \u05D1\u05E2\u05D9\u05D4 \u05D1\u05D0\u05E4\u05DC\u05D9\u05E7\u05E6\u05D9\u05D4, \u05D6\u05D5 \u05DE\u05D3\u05D9\u05E0\u05D9\u05D5\u05EA \u05D0\u05D1\u05D8\u05D7\u05D4 \u05E9\u05DC \u05D4\u05D3\u05E4\u05D3\u05E4\u05DF. \u05D4\u05D3\u05E4\u05D3\u05E4\u05DF \u05DC\u05D0 \u05D9\u05E6\u05D9\u05D2 \u05D1\u05DB\u05DC\u05DC \u05D1\u05E7\u05E9\u05EA \u05D0\u05D9\u05E9\u05D5\u05E8 \u05D1\u05DE\u05E6\u05D1 \u05D4\u05D6\u05D4."), /* @__PURE__ */ React.createElement("p", { className: "intro-sub", style: { textAlign: "right" } }, "\u05DB\u05D3\u05D9 \u05E9\u05D6\u05D4 \u05D9\u05E2\u05D1\u05D5\u05D3, \u05E4\u05EA\u05D7 \u05D0\u05EA \u05D4\u05E7\u05D5\u05D1\u05E5 \u05D1\u05D0\u05D7\u05EA \u05DE\u05D4\u05D3\u05E8\u05DB\u05D9\u05DD \u05D4\u05D1\u05D0\u05D5\u05EA:"), /* @__PURE__ */ React.createElement("ul", { className: "intro-steps" }, /* @__PURE__ */ React.createElement("li", null, /* @__PURE__ */ React.createElement("span", { className: "step-num" }, "1"), " \u05D4\u05E2\u05DC\u05D4 \u05D0\u05EA \u05D4\u05E7\u05D5\u05D1\u05E5 \u05DC\u05D0\u05D7\u05E1\u05D5\u05DF \u05E2\u05DD HTTPS (\u05DC\u05DE\u05E9\u05DC GitHub Pages, Netlify Drop) \u05D5\u05E4\u05EA\u05D7 \u05DE\u05E9\u05DD"), /* @__PURE__ */ React.createElement("li", null, /* @__PURE__ */ React.createElement("span", { className: "step-num" }, "2"), " \u05D0\u05D5 \u05D4\u05E8\u05E5 \u05E9\u05E8\u05EA \u05DE\u05E7\u05D5\u05DE\u05D9 - \u05DC\u05DE\u05E9\u05DC ", /* @__PURE__ */ React.createElement("code", null, "python3 -m http.server"), " \u05D1\u05EA\u05D9\u05E7\u05D9\u05D9\u05EA \u05D4\u05E7\u05D5\u05D1\u05E5, \u05D5\u05E4\u05EA\u05D7 ", /* @__PURE__ */ React.createElement("code", null, "http://localhost:8000"))));
+  }
+  let diag = null;
+  if (errInfo) {
+    if (errInfo.name === "NotFoundError" || errInfo.name === "DevicesNotFoundError") {
+      diag = { title: "\u05DC\u05D0 \u05E0\u05DE\u05E6\u05D0\u05D4 \u05DE\u05E6\u05DC\u05DE\u05D4 \u05D1\u05DE\u05DB\u05E9\u05D9\u05E8 \u05D6\u05D4", lines: ["\u05D6\u05D5 \u05DC\u05D0 \u05D1\u05E2\u05D9\u05D9\u05EA \u05D4\u05E8\u05E9\u05D0\u05D4 - \u05D4\u05DE\u05E2\u05E8\u05DB\u05EA \u05DC\u05D0 \u05DE\u05D6\u05D4\u05D4 \u05D0\u05E3 \u05DE\u05E6\u05DC\u05DE\u05D4 \u05DE\u05D7\u05D5\u05D1\u05E8\u05EA.", "\u05D5\u05D3\u05D0 \u05E9\u05D9\u05E9 \u05DE\u05E6\u05DC\u05DE\u05D4 \u05DE\u05D7\u05D5\u05D1\u05E8\u05EA \u05D5\u05DE\u05D5\u05E4\u05E2\u05DC\u05EA \u05D1\u05DE\u05DB\u05E9\u05D9\u05E8 \u05D6\u05D4 (\u05DC\u05D0 \u05DE\u05DB\u05D5\u05D1\u05D4 \u05D1\u05DE\u05D0\u05E4\u05E9\u05E8\u05D5\u05EA \u05DE\u05E2\u05E8\u05DB\u05EA \u05D4\u05D4\u05E4\u05E2\u05DC\u05D4).", "\u05D0\u05DD \u05D6\u05D4 \u05DE\u05D7\u05E9\u05D1 \u05E0\u05D9\u05D9\u05D3, \u05D1\u05D3\u05D5\u05E7 \u05D1\u05D4\u05D2\u05D3\u05E8\u05D5\u05EA \u05D4\u05DE\u05E2\u05E8\u05DB\u05EA \u05E9\u05D4\u05DE\u05E6\u05DC\u05DE\u05D4 \u05DE\u05D7\u05D5\u05D1\u05E8\u05EA \u05D5\u05DC\u05D0 \u05DE\u05D5\u05E9\u05D1\u05EA\u05EA."] };
+    } else if (errInfo.name === "NotReadableError" || errInfo.name === "TrackStartError") {
+      diag = { title: "\u05D4\u05DE\u05E6\u05DC\u05DE\u05D4 \u05EA\u05E4\u05D5\u05E1\u05D4 \u05D0\u05E6\u05DC \u05EA\u05D5\u05DB\u05E0\u05D4 \u05D0\u05D7\u05E8\u05EA", lines: ["\u05D0\u05E4\u05DC\u05D9\u05E7\u05E6\u05D9\u05D4/\u05D8\u05D0\u05D1 \u05D0\u05D7\u05E8 \u05DB\u05D1\u05E8 \u05DE\u05E9\u05EA\u05DE\u05E9 \u05D1\u05DE\u05E6\u05DC\u05DE\u05D4 \u05DB\u05E8\u05D2\u05E2.", "\u05E1\u05D2\u05D5\u05E8 \u05D0\u05E4\u05DC\u05D9\u05E7\u05E6\u05D9\u05D5\u05EA \u05D0\u05D7\u05E8\u05D5\u05EA \u05E9\u05DE\u05E9\u05EA\u05DE\u05E9\u05D5\u05EA \u05D1\u05DE\u05E6\u05DC\u05DE\u05D4 (\u05DB\u05D2\u05D5\u05DF Zoom, Teams, \u05D8\u05D0\u05D1 \u05D0\u05D7\u05E8 \u05E9\u05DC \u05D4\u05D3\u05E4\u05D3\u05E4\u05DF) \u05D5\u05E0\u05E1\u05D4 \u05E9\u05D5\u05D1."] };
+    } else if (errInfo.name === "OverconstrainedError" || errInfo.name === "ConstraintNotSatisfiedError") {
+      diag = { title: "\u05D4\u05DE\u05E6\u05DC\u05DE\u05D4 \u05E9\u05E0\u05DE\u05E6\u05D0\u05D4 \u05DC\u05D0 \u05EA\u05D5\u05DE\u05DB\u05EA \u05D1\u05D0\u05D9\u05DB\u05D5\u05EA \u05E9\u05D1\u05D9\u05E7\u05E9\u05D5", lines: ["\u05E0\u05E1\u05D4 \u05DC\u05D7\u05E5 \u05E2\u05DC \"\u05E0\u05E1\u05D4 \u05E9\u05D5\u05D1\" \u05DC\u05DE\u05D8\u05D4 - \u05D4\u05D0\u05E4\u05DC\u05D9\u05E7\u05E6\u05D9\u05D4 \u05EA\u05E0\u05E1\u05D4 \u05E9\u05D5\u05D1 \u05E2\u05DD \u05D3\u05E8\u05D9\u05E9\u05D5\u05EA \u05E8\u05DB\u05D5\u05EA \u05D9\u05D5\u05EA\u05E8."] };
+    } else if (errInfo.name === "NotAllowedError" || errInfo.name === "PermissionDeniedError" || errInfo.name === "SecurityError") {
+      diag = { title: "\u05D4\u05D2\u05D9\u05E9\u05D4 \u05DC\u05DE\u05E6\u05DC\u05DE\u05D4 \u05D7\u05E1\u05D5\u05DE\u05D4", lines: [
+        "\u05D0\u05D7\u05E8\u05D9 \u05E9\u05D7\u05D5\u05E1\u05DE\u05D9\u05DD \u05D2\u05D9\u05E9\u05D4 \u05E4\u05E2\u05DD \u05D0\u05D7\u05EA, \u05D4\u05D3\u05E4\u05D3\u05E4\u05DF \u05DC\u05D0 \u05D9\u05E6\u05D9\u05D2 \u05E9\u05D5\u05D1 \u05D0\u05EA \u05D1\u05E7\u05E9\u05EA \u05D4\u05D0\u05D9\u05E9\u05D5\u05E8 \u05E2\u05E6\u05DE\u05D4 - \u05E6\u05E8\u05D9\u05DA \u05DC\u05D0\u05E4\u05E9\u05E8 \u05D9\u05D3\u05E0\u05D9\u05EA \u05D1\u05D4\u05D2\u05D3\u05E8\u05D5\u05EA.",
+        "\u05D1\u05DE\u05D7\u05E9\u05D1/\u05E0\u05D9\u05D9\u05D3: \u05DC\u05D7\u05E5 \u05E2\u05DC \u05D4\u05E1\u05DE\u05DC (\u05DE\u05E0\u05E2\u05D5\u05DC / (i) / \u05D0\u05D9\u05E7\u05D5\u05E0\u05EA \u05DE\u05D9\u05D3\u05E2) \u05DC\u05D9\u05D3 \u05DB\u05EA\u05D5\u05D1\u05EA \u05D4\u05D0\u05EA\u05E8 \u05D1\u05E8\u05D0\u05E9 \u05D4\u05D3\u05E4\u05D3\u05E4\u05DF, \u05DE\u05E6\u05D0 \"\u05DE\u05E6\u05DC\u05DE\u05D4\" \u05D5\u05E9\u05E0\u05D4 \u05DC\u05D0\u05E4\u05E9\u05E8, \u05D5\u05E8\u05E2\u05E0\u05DF.",
+        "\u05D1\u05D8\u05DC\u05E4\u05D5\u05DF: \u05D1\u05D3\u05D5\u05E7 \u05D2\u05DD \u05D1\u05D4\u05D2\u05D3\u05E8\u05D5\u05EA \u05D4\u05DE\u05E2\u05E8\u05DB\u05EA \u05D4\u05DB\u05DC\u05DC\u05D9\u05D5\u05EA \u05E9\u05DC \u05D4\u05D8\u05DC\u05E4\u05D5\u05DF (\u05DC\u05D0 \u05E8\u05E7 \u05D1\u05D3\u05E4\u05D3\u05E4\u05DF) \u05E9\u05D4\u05D3\u05E4\u05D3\u05E4\u05DF \u05DE\u05D5\u05E8\u05E9\u05D4 \u05D2\u05D9\u05E9\u05D4 \u05DC\u05DE\u05E6\u05DC\u05DE\u05D4.",
+        "\u05D0\u05DD \u05D6\u05D4 \u05DE\u05DB\u05E9\u05D9\u05E8 \u05DE\u05E0\u05D5\u05D4\u05DC (\u05D1\u05D9\u05EA \u05E1\u05E4\u05E8/\u05E2\u05D1\u05D5\u05D3\u05D4) - \u05D4\u05DE\u05E0\u05D4\u05DC \u05D4-IT \u05E6\u05E8\u05D9\u05DA \u05DC\u05D0\u05E4\u05E9\u05E8 \u05D2\u05D9\u05E9\u05D4 \u05DC\u05DE\u05E6\u05DC\u05DE\u05D4 \u05DC\u05D0\u05EA\u05E8 \u05D6\u05D4."
+      ] };
+    } else {
+      diag = { title: "\u05D0\u05E8\u05E2\u05D4 \u05DB\u05E9\u05DC \u05D1\u05D2\u05D9\u05E9\u05D4 \u05DC\u05DE\u05E6\u05DC\u05DE\u05D4", lines: ["\u05E4\u05E8\u05D8\u05D9 \u05D4\u05E9\u05D2\u05D9\u05D0\u05D4 \u05D4\u05D8\u05DB\u05E0\u05D9\u05EA: " + errInfo.name + (errInfo.message ? " - " + errInfo.message : "")] };
+    }
+  }
+  return /* @__PURE__ */ React.createElement("div", { className: "screen intro-screen" }, /* @__PURE__ */ React.createElement("div", { className: "intro-icon" }, /* @__PURE__ */ React.createElement(Camera, { size: 38 })), /* @__PURE__ */ React.createElement("h1", null, "\u05D2\u05D9\u05E9\u05D4 \u05DC\u05DE\u05E6\u05DC\u05DE\u05D4"), /* @__PURE__ */ React.createElement("p", { className: "intro-sub" }, "\u05DB\u05D3\u05D9 \u05DC\u05E1\u05E8\u05D5\u05E7 \u05D0\u05EA \u05E4\u05D0\u05D5\u05EA \u05D4\u05E7\u05D5\u05D1\u05D9\u05D9\u05D4, \u05D4\u05D0\u05E4\u05DC\u05D9\u05E7\u05E6\u05D9\u05D4 \u05E6\u05E8\u05D9\u05DB\u05D4 \u05D2\u05D9\u05E9\u05D4 \u05DC\u05DE\u05E6\u05DC\u05DE\u05D4. \u05DC\u05D7\u05D9\u05E6\u05D4 \u05E2\u05DC \u05D4\u05DB\u05E4\u05EA\u05D5\u05E8 \u05EA\u05D5\u05E4\u05D9\u05E2 \u05D1\u05E7\u05E9\u05EA \u05D0\u05D9\u05E9\u05D5\u05E8 \u05E9\u05DC \u05D4\u05D3\u05E4\u05D3\u05E4\u05DF - \u05D9\u05E9 \u05DC\u05D0\u05E9\u05E8 \u05D0\u05D5\u05EA\u05D4 \u05DB\u05D3\u05D9 \u05DC\u05D4\u05DE\u05E9\u05D9\u05DA."), diag && /* @__PURE__ */ React.createElement("div", { key: attempt, className: "permission-howto permission-flash" }, /* @__PURE__ */ React.createElement("p", { className: "permission-howto-title" }, "\u05E0\u05D9\u05E1\u05D9\u05D5\u05DF ", attempt, ": ", diag.title), /* @__PURE__ */ React.createElement("ul", { className: "permission-howto-list" }, diag.lines.map((line, i) => /* @__PURE__ */ React.createElement("li", { key: i }, line)))), /* @__PURE__ */ React.createElement("button", { className: "primary-btn full", onClick: requestCamera, disabled: state === "requesting" }, /* @__PURE__ */ React.createElement(Camera, { size: 18 }), " ", state === "requesting" ? "\u05DE\u05DE\u05EA\u05D9\u05DF \u05DC\u05D0\u05D9\u05E9\u05D5\u05E8\u2026" : attempt > 0 ? "\u05E0\u05E1\u05D4 \u05E9\u05D5\u05D1" : "\u05D0\u05E4\u05E9\u05E8 \u05D2\u05D9\u05E9\u05D4 \u05DC\u05DE\u05E6\u05DC\u05DE\u05D4"));
+}
+function ScanScreen({ faceIdx, stream, rawCaptures, onCapture, onBack }) {
+  const face = FACE_SEQUENCE[faceIdx];
+  const videoRef = useRef(null);
+  const canvasRef = useRef(null);
+  const [ready, setReady] = useState(false);
+  const [notCubeWarning, setNotCubeWarning] = useState(false);
+  const [mirrored, setMirrored] = useState(false);
+  const capturedColors = {};
+  FACE_SEQUENCE.forEach((f) => {
+    if (rawCaptures[f]) capturedColors[f] = rawCaptures[f].map((idx) => CUBE_COLORS[idx].css);
+  });
+  useEffect(() => {
+    setReady(false);
+    setNotCubeWarning(false);
+    const video = videoRef.current;
+    if (!video || !stream) return;
+    video.srcObject = stream;
+    const track = stream.getVideoTracks()[0];
+    const settings = track && track.getSettings ? track.getSettings() : {};
+    setMirrored(settings.facingMode !== "environment");
+    const onLoaded = () => {
+      video.play();
+      setReady(true);
+    };
+    video.addEventListener("loadedmetadata", onLoaded);
+    if (video.readyState >= 1) onLoaded();
+    return () => video.removeEventListener("loadedmetadata", onLoaded);
+  }, [stream, faceIdx]);
+  const capture = () => {
+    const video = videoRef.current;
+    if (!video || !video.videoWidth) return;
+    const size = Math.min(video.videoWidth, video.videoHeight);
+    const sx = (video.videoWidth - size) / 2;
+    const sy = (video.videoHeight - size) / 2;
+    const canvas = canvasRef.current;
+    canvas.width = size;
+    canvas.height = size;
+    const ctx = canvas.getContext("2d");
+    ctx.save();
+    if (mirrored) {
+      ctx.translate(size, 0);
+      ctx.scale(-1, 1);
+    }
+    ctx.drawImage(video, sx, sy, size, size, 0, 0, size, size);
+    ctx.restore();
+    const imageData = ctx.getImageData(0, 0, size, size);
+    const { colorIndices, looksLikeCube, reason } = analyzeFaceCapture(imageData);
+    if (!looksLikeCube) {
+      setNotCubeWarning({ reason, colorIndices });
+      return;
+    }
+    setNotCubeWarning(false);
+    onCapture(face, colorIndices);
+  };
+  return /* @__PURE__ */ React.createElement("div", { className: "screen scan-screen" }, /* @__PURE__ */ React.createElement("div", { className: "scan-header" }, /* @__PURE__ */ React.createElement("button", { className: "icon-btn", onClick: onBack, "aria-label": "\u05D7\u05D6\u05E8\u05D4" }, /* @__PURE__ */ React.createElement(ChevronRight, { size: 22 })), /* @__PURE__ */ React.createElement("div", { className: "scan-progress" }, FACE_SEQUENCE.map((f, i) => /* @__PURE__ */ React.createElement("div", { key: f, className: `dot ${i === faceIdx ? "dot-active" : ""} ${i < faceIdx ? "dot-done" : ""}` }))), /* @__PURE__ */ React.createElement("div", { style: { width: 38 } })), /* @__PURE__ */ React.createElement("h2", { className: "scan-title" }, "\u05E1\u05E8\u05D5\u05E7 \u05E4\u05D0\u05D4 ", faceIdx + 1, " \u05DE\u05EA\u05D5\u05DA 6: ", /* @__PURE__ */ React.createElement("span", { className: "accent" }, FACE_LABEL_HE[face])), /* @__PURE__ */ React.createElement("p", { className: "scan-guidance" }, FACE_GUIDANCE_HE[face]), /* @__PURE__ */ React.createElement("div", { className: "guide-cube-frame" }, /* @__PURE__ */ React.createElement(GuideCube3D, { targetFace: face, capturedColors })), /* @__PURE__ */ React.createElement("div", { className: "camera-wrap" }, /* @__PURE__ */ React.createElement("video", { ref: videoRef, className: "camera-video", style: mirrored ? { transform: "scaleX(-1)" } : void 0, playsInline: true, muted: true }), /* @__PURE__ */ React.createElement("div", { className: "frame-outline" }), !ready && /* @__PURE__ */ React.createElement("div", { className: "camera-loading" }, "\u05E4\u05D5\u05EA\u05D7 \u05DE\u05E6\u05DC\u05DE\u05D4\u2026")), notCubeWarning && /* @__PURE__ */ React.createElement("div", { className: "not-cube-warning" }, /* @__PURE__ */ React.createElement("div", { className: "error-item", style: { marginBottom: 10 } }, /* @__PURE__ */ React.createElement("span", { className: "error-dot" }), /* @__PURE__ */ React.createElement("p", null, notCubeWarning.reason === "no-cube-found" ? "\u05DC\u05D0 \u05D6\u05D5\u05D4\u05D4 \u05E7\u05D5\u05D1\u05D9\u05D9\u05D4 \u05D1\u05EA\u05DE\u05D5\u05E0\u05D4 - \u05D5\u05D3\u05D0 \u05E9\u05D4\u05E4\u05D0\u05D4 \u05DE\u05DE\u05DC\u05D0\u05D4 \u05D0\u05EA \u05D4\u05DE\u05E1\u05D2\u05E8\u05EA \u05D5\u05E9\u05D4\u05EA\u05D0\u05D5\u05E8\u05D4 \u05D8\u05D5\u05D1\u05D4, \u05D5\u05E0\u05E1\u05D4 \u05E9\u05D5\u05D1." : "\u05D4\u05E6\u05D9\u05DC\u05D5\u05DD \u05DC\u05D0 \u05D1\u05E8\u05D5\u05E8 \u05DE\u05E1\u05E4\u05D9\u05E7 - \u05D0\u05E4\u05E9\u05E8 \u05DC\u05E0\u05E1\u05D5\u05EA \u05E9\u05D5\u05D1, \u05D0\u05D5 \u05DC\u05D4\u05DE\u05E9\u05D9\u05DA \u05E2\u05DD \u05D4\u05E6\u05D9\u05DC\u05D5\u05DD \u05D4\u05D6\u05D4 \u05D5\u05DC\u05EA\u05E7\u05DF \u05E6\u05D1\u05E2\u05D9\u05DD \u05D9\u05D3\u05E0\u05D9\u05EA \u05D0\u05D7\u05E8 \u05DB\u05DA.")), notCubeWarning.colorIndices && /* @__PURE__ */ React.createElement("button", { className: "secondary-btn full", onClick: () => {
+    onCapture(face, notCubeWarning.colorIndices);
+    setNotCubeWarning(false);
+  } }, "\u05D4\u05DE\u05E9\u05DA \u05D1\u05DB\u05DC \u05D6\u05D0\u05EA \u05E2\u05DD \u05E6\u05D9\u05DC\u05D5\u05DD \u05D6\u05D4")), /* @__PURE__ */ React.createElement("button", { className: "capture-btn", onClick: capture, disabled: !ready }, /* @__PURE__ */ React.createElement(Camera, { size: 22 }), " \u05E6\u05DC\u05DD \u05E4\u05D0\u05D4 \u05D6\u05D5"), /* @__PURE__ */ React.createElement("canvas", { ref: canvasRef, style: { display: "none" } }));
+}
+function ReviewScreen({ rawCaptures, onChangeCell, onConfirm, onRescanFace, faceOrderIdx, setFaceOrderIdx }) {
+  const face = FACE_SEQUENCE[faceOrderIdx];
+  const cells = rawCaptures[face] || [];
+  const [paintIdx, setPaintIdx] = useState(0);
+  const counts = new Array(CUBE_COLORS.length).fill(0);
+  FACE_SEQUENCE.forEach((f) => (rawCaptures[f] || []).forEach((idx) => counts[idx]++));
+  return /* @__PURE__ */ React.createElement("div", { className: "screen review-screen" }, /* @__PURE__ */ React.createElement("h2", { className: "scan-title" }, "\u05D1\u05D3\u05D9\u05E7\u05EA \u05E6\u05D1\u05E2\u05D9\u05DD: ", /* @__PURE__ */ React.createElement("span", { className: "accent" }, FACE_LABEL_HE[face])), /* @__PURE__ */ React.createElement("p", { className: "scan-guidance" }, "\u05D2\u05E8\u05D5\u05E8 \u05DB\u05D3\u05D9 \u05DC\u05E1\u05D5\u05D1\u05D1 \u05D5\u05DC\u05D1\u05D3\u05D5\u05E7 \u05D0\u05EA \u05DB\u05DC \u05D4\u05E7\u05D5\u05D1\u05D9\u05D9\u05D4. \u05D0\u05DD \u05E6\u05D1\u05E2 \u05DC\u05D0 \u05E0\u05DB\u05D5\u05DF: \u05D1\u05D7\u05E8 \u05D0\u05EA \u05D4\u05E6\u05D1\u05E2 \u05D4\u05E0\u05DB\u05D5\u05DF \u05DC\u05DE\u05D8\u05D4, \u05D5\u05D0\u05D6 \u05D4\u05E7\u05E9 \u05E2\u05DC \u05D4\u05DE\u05E9\u05D1\u05E6\u05EA \u05E9\u05E6\u05E8\u05D9\u05DA \u05DC\u05EA\u05E7\u05DF."), /* @__PURE__ */ React.createElement("div", { className: "inspect-cube-frame" }, /* @__PURE__ */ React.createElement(InspectCube3D, { rawCaptures, paintIdx, onChangeCell })), /* @__PURE__ */ React.createElement("div", { className: "face-tabs" }, FACE_SEQUENCE.map((f, i) => /* @__PURE__ */ React.createElement("button", { key: f, className: `face-tab ${i === faceOrderIdx ? "face-tab-active" : ""}`, onClick: () => setFaceOrderIdx(i) }, FACE_LABEL_HE[f]))), /* @__PURE__ */ React.createElement("div", { className: "review-grid" }, cells.map((colorIdx, i) => /* @__PURE__ */ React.createElement(
+    "button",
+    {
+      key: i,
+      className: "review-cell",
+      style: { background: CUBE_COLORS[colorIdx].css },
+      onClick: () => onChangeCell(face, i, paintIdx)
+    }
+  ))), /* @__PURE__ */ React.createElement("p", { className: "paint-label" }, "\u05E6\u05D1\u05E2 \u05DC\u05EA\u05D9\u05E7\u05D5\u05DF:"), /* @__PURE__ */ React.createElement("div", { className: "paint-palette" }, CUBE_COLORS.map((c, i) => /* @__PURE__ */ React.createElement(
+    "button",
+    {
+      key: c.key,
+      className: `paint-swatch ${i === paintIdx ? "paint-swatch-active" : ""}`,
+      style: { background: c.css },
+      onClick: () => setPaintIdx(i)
+    },
+    /* @__PURE__ */ React.createElement("span", { className: `paint-count ${counts[i] !== 9 ? "paint-count-bad" : ""}` }, counts[i])
+  ))), /* @__PURE__ */ React.createElement("p", { className: "paint-hint" }, "\u05DB\u05DC \u05E6\u05D1\u05E2 \u05D0\u05DE\u05D5\u05E8 \u05DC\u05D4\u05D5\u05E4\u05D9\u05E2 \u05D1\u05D3\u05D9\u05D5\u05E7 9 \u05E4\u05E2\u05DE\u05D9\u05DD \u05D1\u05E1\u05DA \u05D4\u05DB\u05DC \u05D1\u05E7\u05D5\u05D1\u05D9\u05D9\u05D4 - \u05D4\u05DE\u05E1\u05E4\u05E8 \u05D4\u05D0\u05D3\u05D5\u05DD \u05DE\u05E1\u05DE\u05DF \u05D7\u05D5\u05E1\u05E8 \u05D4\u05EA\u05D0\u05DE\u05D4."), /* @__PURE__ */ React.createElement("div", { className: "review-actions" }, /* @__PURE__ */ React.createElement("button", { className: "secondary-btn", onClick: () => onRescanFace(faceOrderIdx) }, /* @__PURE__ */ React.createElement(RefreshCw, { size: 18 }), " \u05E1\u05E8\u05D5\u05E7 \u05E4\u05D0\u05D4 \u05D6\u05D5 \u05DE\u05D7\u05D3\u05E9"), faceOrderIdx < 5 ? /* @__PURE__ */ React.createElement("button", { className: "primary-btn", onClick: () => setFaceOrderIdx(faceOrderIdx + 1) }, "\u05D4\u05E4\u05D0\u05D4 \u05D4\u05D1\u05D0\u05D4 ", /* @__PURE__ */ React.createElement(ChevronLeft, { size: 18 })) : /* @__PURE__ */ React.createElement("button", { className: "primary-btn", onClick: onConfirm }, /* @__PURE__ */ React.createElement(Check, { size: 18 }), " \u05D1\u05D3\u05D5\u05E7 \u05EA\u05E7\u05D9\u05E0\u05D5\u05EA")));
+}
+function ValidationErrorScreen({ result, onRescan, onBack }) {
+  return /* @__PURE__ */ React.createElement("div", { className: "screen" }, /* @__PURE__ */ React.createElement("div", { className: "error-hero" }, /* @__PURE__ */ React.createElement(AlertTriangle, { size: 40, color: "#c0392b" }), /* @__PURE__ */ React.createElement("h2", null, "\u05E0\u05DE\u05E6\u05D0\u05D4 \u05D1\u05E2\u05D9\u05D4 \u05D1\u05E1\u05E8\u05D9\u05E7\u05D4")), /* @__PURE__ */ React.createElement("div", { className: "error-list" }, result.errors.map((e, i) => /* @__PURE__ */ React.createElement("div", { key: i, className: "error-item" }, /* @__PURE__ */ React.createElement("span", { className: "error-dot" }), /* @__PURE__ */ React.createElement("p", null, e.message)))), /* @__PURE__ */ React.createElement("p", { className: "error-hint" }, "\u05D1\u05D3\u05D5\u05E7 \u05E9\u05D5\u05D1 \u05D0\u05EA \u05D4\u05E4\u05D0\u05D5\u05EA \u05E9\u05E1\u05E8\u05E7\u05EA - \u05D1\u05DE\u05D9\u05D5\u05D7\u05D3 \u05E9\u05D4\u05D7\u05D6\u05E7\u05EA \u05D0\u05EA \u05D4\u05E7\u05D5\u05D1\u05D9\u05D9\u05D4 \u05D1\u05D0\u05D5\u05EA\u05D5 \u05DB\u05D9\u05D5\u05D5\u05DF \u05DB\u05E4\u05D9 \u05E9\u05DE\u05EA\u05D5\u05D0\u05E8 \u05D1\u05D4\u05E0\u05D7\u05D9\u05D5\u05EA, \u05D5\u05E9\u05DB\u05DC \u05DE\u05D3\u05D1\u05E7\u05D4 \u05D6\u05D5\u05D4\u05EA\u05D4 \u05D1\u05E6\u05D1\u05E2 \u05D4\u05E0\u05DB\u05D5\u05DF."), /* @__PURE__ */ React.createElement("button", { className: "primary-btn full", onClick: onBack }, /* @__PURE__ */ React.createElement(RefreshCw, { size: 18 }), " \u05D7\u05D6\u05E8\u05D4 \u05DC\u05D1\u05D3\u05D9\u05E7\u05EA \u05D4\u05E6\u05D1\u05E2\u05D9\u05DD"));
+}
+const CUBIE_SIZE = 0.94;
+const CUBIE_GAP = 1;
+const STICKER_INSET = 0.06;
+const DARK_PLASTIC = "#1c1c22";
+function buildCubieMesh(cubie) {
+  const dirs = [["x", 1], ["x", -1], ["y", 1], ["y", -1], ["z", 1], ["z", -1]];
+  const materials = dirs.map(([axis, dir]) => {
+    const sticker = cubie.stickers.find((s) => s.axis === axis && s.dir === dir);
+    const color = sticker ? sticker.displayColor : DARK_PLASTIC;
+    return new THREE.MeshLambertMaterial({ color });
+  });
+  const geo = new THREE.BoxGeometry(CUBIE_SIZE, CUBIE_SIZE, CUBIE_SIZE);
+  const mesh = new THREE.Mesh(geo, materials);
+  const group = new THREE.Group();
+  group.add(mesh);
+  return group;
+}
+function matrixToQuaternion(m) {
+  const mat4 = new THREE.Matrix4();
+  mat4.set(
+    m[0][0],
+    m[0][1],
+    m[0][2],
+    0,
+    m[1][0],
+    m[1][1],
+    m[1][2],
+    0,
+    m[2][0],
+    m[2][1],
+    m[2][2],
+    0,
+    0,
+    0,
+    0,
+    1
+  );
+  const q = new THREE.Quaternion();
+  q.setFromRotationMatrix(mat4);
+  return q;
+}
+function Cube3D({ initialCube, movesQueue, currentMoveIndex, onAnimStateChange, speed }) {
+  const mountRef = useRef(null);
+  const stateRef = useRef({
+    scene: null,
+    camera: null,
+    renderer: null,
+    rig: null,
+    meshById: {},
+    liveCube: null,
+    animating: false,
+    raf: null
+  });
+  const orbitRef = useRef({ az: 0.7, el: 0.5, dragging: false, lastX: 0, lastY: 0 });
+  const lastAppliedIndexRef = useRef(-1);
+  useEffect(() => {
+    const mount = mountRef.current;
+    const scene = new THREE.Scene();
+    scene.background = null;
+    const camera = new THREE.PerspectiveCamera(38, 1, 0.1, 100);
+    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    mount.appendChild(renderer.domElement);
+    scene.add(new THREE.AmbientLight(16777215, 0.75));
+    const dir1 = new THREE.DirectionalLight(16777215, 0.55);
+    dir1.position.set(5, 8, 6);
+    scene.add(dir1);
+    const dir2 = new THREE.DirectionalLight(16777215, 0.25);
+    dir2.position.set(-6, -3, -4);
+    scene.add(dir2);
+    const rig = new THREE.Group();
+    scene.add(rig);
+    const meshById = {};
+    initialCube.forEach((cubie) => {
+      const group = buildCubieMesh(cubie);
+      group.position.set(cubie.pos[0] * CUBIE_GAP, cubie.pos[1] * CUBIE_GAP, cubie.pos[2] * CUBIE_GAP);
+      group.quaternion.copy(matrixToQuaternion(cubie.ori));
+      rig.add(group);
+      meshById[cubie.id] = group;
+    });
+    Object.assign(stateRef.current, {
+      scene,
+      camera,
+      renderer,
+      rig,
+      meshById,
+      liveCube: initialCube.map((c) => ({ ...c, pos: c.pos.slice(), ori: c.ori.map((r) => r.slice()) }))
+    });
+    function resize() {
+      const w = mount.clientWidth, h = mount.clientHeight;
+      renderer.setSize(w, h);
+      camera.aspect = w / h;
+      camera.updateProjectionMatrix();
+    }
+    resize();
+    const ro = new ResizeObserver(resize);
+    ro.observe(mount);
+    function updateCameraPosition() {
+      const { az, el: el2 } = orbitRef.current;
+      const dist = 7.2;
+      const x = dist * Math.cos(el2) * Math.sin(az);
+      const y = dist * Math.sin(el2);
+      const z = dist * Math.cos(el2) * Math.cos(az);
+      camera.position.set(x, y, z);
+      camera.lookAt(0, 0, 0);
+    }
+    updateCameraPosition();
+    function onPointerDown(e) {
+      orbitRef.current.dragging = true;
+      orbitRef.current.lastX = e.clientX;
+      orbitRef.current.lastY = e.clientY;
+    }
+    function onPointerMove(e) {
+      if (!orbitRef.current.dragging) return;
+      const dx = e.clientX - orbitRef.current.lastX;
+      const dy = e.clientY - orbitRef.current.lastY;
+      orbitRef.current.lastX = e.clientX;
+      orbitRef.current.lastY = e.clientY;
+      orbitRef.current.az -= dx * 8e-3;
+      orbitRef.current.el = Math.max(-1.2, Math.min(1.2, orbitRef.current.el + dy * 8e-3));
+      updateCameraPosition();
+    }
+    function onPointerUp() {
+      orbitRef.current.dragging = false;
+    }
+    const el = renderer.domElement;
+    el.style.touchAction = "none";
+    el.addEventListener("pointerdown", onPointerDown);
+    window.addEventListener("pointermove", onPointerMove);
+    window.addEventListener("pointerup", onPointerUp);
+    let raf;
+    function tick() {
+      renderer.render(scene, camera);
+      raf = requestAnimationFrame(tick);
+    }
+    tick();
+    return () => {
+      cancelAnimationFrame(raf);
+      ro.disconnect();
+      el.removeEventListener("pointerdown", onPointerDown);
+      window.removeEventListener("pointermove", onPointerMove);
+      window.removeEventListener("pointerup", onPointerUp);
+      renderer.dispose();
+      if (mount.contains(renderer.domElement)) mount.removeChild(renderer.domElement);
+    };
+  }, []);
+  useEffect(() => {
+    const st = stateRef.current;
+    if (!st.renderer) return;
+    async function run() {
+      while (lastAppliedIndexRef.current < currentMoveIndex) {
+        const idx = lastAppliedIndexRef.current + 1;
+        const move = movesQueue[idx];
+        if (!move) break;
+        await animateOneMove(st, move, orbitRef, 520 / (speed || 1));
+        lastAppliedIndexRef.current = idx;
+      }
+      while (lastAppliedIndexRef.current > currentMoveIndex) {
+        const idx = lastAppliedIndexRef.current;
+        const move = movesQueue[idx];
+        if (!move) break;
+        await animateOneMove(st, invertMove(move), orbitRef, 520 / (speed || 1));
+        lastAppliedIndexRef.current = idx - 1;
+      }
+      onAnimStateChange && onAnimStateChange(false);
+    }
+    onAnimStateChange && onAnimStateChange(true);
+    run();
+  }, [currentMoveIndex, movesQueue, speed]);
+  return /* @__PURE__ */ React.createElement("div", { ref: mountRef, className: "cube3d-mount" });
+}
+function animateOneMove(st, move, orbitRef, durationMs) {
+  return new Promise((resolve) => {
+    const face = move[0];
+    const mod = move.slice(1);
+    const { axis, dir } = FACE_INFO[face];
+    const s = axis === "y" ? dir : -dir;
+    let totalAngle;
+    if (mod === "'") totalAngle = -s * (Math.PI / 2);
+    else if (mod === "2") totalAngle = s * Math.PI;
+    else totalAngle = s * (Math.PI / 2);
+    const axisVec = axis === "x" ? new THREE.Vector3(1, 0, 0) : axis === "y" ? new THREE.Vector3(0, 1, 0) : new THREE.Vector3(0, 0, 1);
+    const idx = AXIS_IDX[axis];
+    const affected = st.liveCube.filter((c) => c.pos[idx] === dir);
+    const startData = affected.map((c) => ({
+      id: c.id,
+      pos: c.pos.slice(),
+      quat: st.meshById[c.id].quaternion.clone()
+    }));
+    const t0 = performance.now();
+    function frame(now) {
+      const t = Math.min(1, (now - t0) / durationMs);
+      const eased = t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
+      const angle = totalAngle * eased;
+      const qDelta = new THREE.Quaternion().setFromAxisAngle(axisVec, angle);
+      startData.forEach((sd) => {
+        const mesh = st.meshById[sd.id];
+        const pos = new THREE.Vector3(sd.pos[0] * CUBIE_GAP, sd.pos[1] * CUBIE_GAP, sd.pos[2] * CUBIE_GAP);
+        pos.applyQuaternion(qDelta);
+        mesh.position.copy(pos);
+        mesh.quaternion.copy(qDelta).multiply(sd.quat);
+      });
+      if (t < 1) {
+        requestAnimationFrame(frame);
+      } else {
+        st.liveCube = applyMove(st.liveCube, move);
+        st.liveCube.forEach((c) => {
+          const mesh = st.meshById[c.id];
+          mesh.position.set(c.pos[0] * CUBIE_GAP, c.pos[1] * CUBIE_GAP, c.pos[2] * CUBIE_GAP);
+          mesh.quaternion.copy(matrixToQuaternion(c.ori));
+        });
+        resolve();
+      }
+    }
+    requestAnimationFrame(frame);
+  });
+}
+const GUIDE_GRAY = "#9a9aa4";
+function buildGuideCubieMesh(cubie) {
+  const dirs = [["x", 1], ["x", -1], ["y", 1], ["y", -1], ["z", 1], ["z", -1]];
+  const materials = dirs.map(([axis, dir]) => {
+    const sticker = cubie.stickers.find((s) => s.axis === axis && s.dir === dir);
+    const color = sticker ? GUIDE_GRAY : DARK_PLASTIC;
+    return new THREE.MeshLambertMaterial({ color });
+  });
+  const geo = new THREE.BoxGeometry(CUBIE_SIZE, CUBIE_SIZE, CUBIE_SIZE);
+  const mesh = new THREE.Mesh(geo, materials);
+  const group = new THREE.Group();
+  group.add(mesh);
+  group.userData.mesh = mesh;
+  return group;
+}
+const MAT_INDEX = { "x1": 0, "x-1": 1, "y1": 2, "y-1": 3, "z1": 4, "z-1": 5 };
+function GuideCube3D({ targetFace, capturedColors }) {
+  const mountRef = useRef(null);
+  const stateRef = useRef({ renderer: null, camera: null, scene: null, rig: null, meshById: {}, refCube: null });
+  const currentQuatRef = useRef(new THREE.Quaternion());
+  const animRef = useRef(null);
+  useEffect(() => {
+    const mount = mountRef.current;
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(36, 1, 0.1, 100);
+    camera.position.set(0, 0, 6.4);
+    camera.lookAt(0, 0, 0);
+    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    mount.appendChild(renderer.domElement);
+    scene.add(new THREE.AmbientLight(16777215, 0.8));
+    const d1 = new THREE.DirectionalLight(16777215, 0.5);
+    d1.position.set(4, 6, 5);
+    scene.add(d1);
+    const d2 = new THREE.DirectionalLight(16777215, 0.25);
+    d2.position.set(-4, -2, -3);
+    scene.add(d2);
+    const rig = new THREE.Group();
+    scene.add(rig);
+    const refColorMap = { U: "U", D: "D", F: "F", B: "B", L: "L", R: "R" };
+    const refCube = makeSolvedCube(refColorMap);
+    const meshById = {};
+    refCube.forEach((cubie) => {
+      const group = buildGuideCubieMesh(cubie);
+      group.position.set(cubie.pos[0] * CUBIE_GAP, cubie.pos[1] * CUBIE_GAP, cubie.pos[2] * CUBIE_GAP);
+      rig.add(group);
+      meshById[cubie.id] = group;
+    });
+    Object.assign(stateRef.current, { renderer, camera, scene, rig, meshById, refCube });
+    function resize() {
+      const w = mount.clientWidth, h = mount.clientHeight;
+      renderer.setSize(w, h);
+      camera.aspect = w / h;
+      camera.updateProjectionMatrix();
+    }
+    resize();
+    const ro = new ResizeObserver(resize);
+    ro.observe(mount);
+    let raf;
+    function tick() {
+      renderer.render(scene, camera);
+      raf = requestAnimationFrame(tick);
+    }
+    tick();
+    return () => {
+      cancelAnimationFrame(raf);
+      ro.disconnect();
+      renderer.dispose();
+      if (mount.contains(renderer.domElement)) mount.removeChild(renderer.domElement);
+    };
+  }, []);
+  useEffect(() => {
+    const st = stateRef.current;
+    if (!st.rig) return;
+    const targetMatrix = faceViewMatrix(targetFace);
+    const targetQuat = matrixToQuaternion(targetMatrix);
+    const startQuat = currentQuatRef.current.clone();
+    if (animRef.current) cancelAnimationFrame(animRef.current);
+    const t0 = performance.now();
+    const duration = 700;
+    function frame(now) {
+      const t = Math.min(1, (now - t0) / duration);
+      const eased = t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
+      const q = startQuat.clone().slerp(targetQuat, eased);
+      st.rig.quaternion.copy(q);
+      if (t < 1) {
+        animRef.current = requestAnimationFrame(frame);
+      } else {
+        currentQuatRef.current = targetQuat.clone();
+      }
+    }
+    animRef.current = requestAnimationFrame(frame);
+  }, [targetFace]);
+  useEffect(() => {
+    const st = stateRef.current;
+    if (!st.refCube) return;
+    FACE_SEQUENCE.forEach((face) => {
+      const colors = capturedColors[face];
+      if (!colors) return;
+      const { axis, dir } = FACE_INFO[face];
+      const positions = faceLayerPositions(face);
+      positions.forEach((pos, i) => {
+        const cubie = st.refCube.find((c) => c.pos[0] === pos[0] && c.pos[1] === pos[1] && c.pos[2] === pos[2]);
+        const group = st.meshById[cubie.id];
+        const mesh = group.userData.mesh;
+        const matIdx = MAT_INDEX[`${axis}${dir}`];
+        mesh.material[matIdx].color.set(colors[i]);
+      });
+    });
+  }, [capturedColors]);
+  return /* @__PURE__ */ React.createElement("div", { ref: mountRef, className: "guide-cube-mount" });
+}
+function InspectCube3D({ rawCaptures, paintIdx, onChangeCell }) {
+  const mountRef = useRef(null);
+  const stateRef = useRef({ renderer: null, camera: null, scene: null, meshById: {}, refCube: null, stickerLookup: {}, meshes: [] });
+  const orbitRef = useRef({ az: 0.6, el: 0.45, dragging: false, lastX: 0, lastY: 0, downX: 0, downY: 0, moved: false });
+  const paintRef = useRef({ paintIdx: 0, onChangeCell: null });
+  paintRef.current.paintIdx = paintIdx;
+  paintRef.current.onChangeCell = onChangeCell;
+  useEffect(() => {
+    const mount = mountRef.current;
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(36, 1, 0.1, 100);
+    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    mount.appendChild(renderer.domElement);
+    scene.add(new THREE.AmbientLight(16777215, 0.8));
+    const d1 = new THREE.DirectionalLight(16777215, 0.5);
+    d1.position.set(4, 6, 5);
+    scene.add(d1);
+    const d2 = new THREE.DirectionalLight(16777215, 0.25);
+    d2.position.set(-4, -2, -3);
+    scene.add(d2);
+    const refColorMap = { U: "U", D: "D", F: "F", B: "B", L: "L", R: "R" };
+    const refCube = makeSolvedCube(refColorMap);
+    const meshById = {};
+    const meshes = [];
+    refCube.forEach((cubie) => {
+      const group = buildGuideCubieMesh(cubie);
+      group.position.set(cubie.pos[0] * CUBIE_GAP, cubie.pos[1] * CUBIE_GAP, cubie.pos[2] * CUBIE_GAP);
+      scene.add(group);
+      meshById[cubie.id] = group;
+      const m = group.userData.mesh;
+      m.userData.cubieId = cubie.id;
+      meshes.push(m);
+    });
+    const stickerLookup = {};
+    FACE_SEQUENCE.forEach((face) => {
+      const { axis, dir } = FACE_INFO[face];
+      const matIdx = MAT_INDEX[`${axis}${dir}`];
+      const positions = faceLayerPositions(face);
+      positions.forEach((pos, cellIdx) => {
+        const cubie = refCube.find((c) => c.pos[0] === pos[0] && c.pos[1] === pos[1] && c.pos[2] === pos[2]);
+        stickerLookup[cubie.id + "_" + matIdx] = { face, cellIdx };
+      });
+    });
+    Object.assign(stateRef.current, { renderer, camera, scene, meshById, refCube, stickerLookup, meshes });
+    function resize() {
+      const w = mount.clientWidth, h = mount.clientHeight;
+      renderer.setSize(w, h);
+      camera.aspect = w / h;
+      camera.updateProjectionMatrix();
+    }
+    resize();
+    const ro = new ResizeObserver(resize);
+    ro.observe(mount);
+    function updateCam() {
+      const { az, el: el2 } = orbitRef.current;
+      const dist = 6.6;
+      camera.position.set(dist * Math.cos(el2) * Math.sin(az), dist * Math.sin(el2), dist * Math.cos(el2) * Math.cos(az));
+      camera.lookAt(0, 0, 0);
+    }
+    updateCam();
+    const raycaster = new THREE.Raycaster();
+    const ndc = new THREE.Vector2();
+    function onDown(e) {
+      orbitRef.current.dragging = true;
+      orbitRef.current.lastX = e.clientX;
+      orbitRef.current.lastY = e.clientY;
+      orbitRef.current.downX = e.clientX;
+      orbitRef.current.downY = e.clientY;
+      orbitRef.current.moved = false;
+    }
+    function onMove(e) {
+      if (!orbitRef.current.dragging) return;
+      const dx = e.clientX - orbitRef.current.lastX, dy = e.clientY - orbitRef.current.lastY;
+      orbitRef.current.lastX = e.clientX;
+      orbitRef.current.lastY = e.clientY;
+      const totDx = e.clientX - orbitRef.current.downX;
+      const totDy = e.clientY - orbitRef.current.downY;
+      if (Math.hypot(totDx, totDy) > 6) orbitRef.current.moved = true;
+      if (orbitRef.current.moved) {
+        orbitRef.current.az -= dx * 8e-3;
+        orbitRef.current.el = Math.max(-1.2, Math.min(1.2, orbitRef.current.el + dy * 8e-3));
+        updateCam();
+      }
+    }
+    function onUp(e) {
+      var _a, _b;
+      const wasDrag = orbitRef.current.moved;
+      orbitRef.current.dragging = false;
+      if (wasDrag) return;
+      const st = stateRef.current;
+      if (!st.meshes || !st.meshes.length) return;
+      const rect = renderer.domElement.getBoundingClientRect();
+      const cx = (_a = e.clientX) != null ? _a : orbitRef.current.lastX;
+      const cy = (_b = e.clientY) != null ? _b : orbitRef.current.lastY;
+      ndc.x = (cx - rect.left) / rect.width * 2 - 1;
+      ndc.y = -((cy - rect.top) / rect.height) * 2 + 1;
+      raycaster.setFromCamera(ndc, camera);
+      const hits = raycaster.intersectObjects(st.meshes, false);
+      if (!hits.length) return;
+      const hit = hits[0];
+      const matIdx = hit.face && hit.face.materialIndex;
+      const cubieId = hit.object.userData.cubieId;
+      const info = st.stickerLookup[cubieId + "_" + matIdx];
+      if (!info) return;
+      const { onChangeCell: cb, paintIdx: pi } = paintRef.current;
+      if (cb) cb(info.face, info.cellIdx, pi);
+    }
+    const el = renderer.domElement;
+    el.style.touchAction = "none";
+    el.addEventListener("pointerdown", onDown);
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+    el.addEventListener("pointerup", onUp);
+    let raf;
+    function tick() {
+      renderer.render(scene, camera);
+      raf = requestAnimationFrame(tick);
+    }
+    tick();
+    return () => {
+      cancelAnimationFrame(raf);
+      ro.disconnect();
+      el.removeEventListener("pointerdown", onDown);
+      el.removeEventListener("pointerup", onUp);
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      renderer.dispose();
+      if (mount.contains(renderer.domElement)) mount.removeChild(renderer.domElement);
+    };
+  }, []);
+  useEffect(() => {
+    const st = stateRef.current;
+    if (!st.refCube) return;
+    FACE_SEQUENCE.forEach((face) => {
+      const colorIdxs = rawCaptures[face];
+      if (!colorIdxs) return;
+      const { axis, dir } = FACE_INFO[face];
+      const positions = faceLayerPositions(face);
+      positions.forEach((pos, i) => {
+        const cubie = st.refCube.find((c) => c.pos[0] === pos[0] && c.pos[1] === pos[1] && c.pos[2] === pos[2]);
+        const group = st.meshById[cubie.id];
+        const mesh = group.userData.mesh;
+        const matIdx = MAT_INDEX[`${axis}${dir}`];
+        mesh.material[matIdx].color.set(CUBE_COLORS[colorIdxs[i]].css);
+      });
+    });
+  }, [rawCaptures]);
+  return /* @__PURE__ */ React.createElement("div", { ref: mountRef, className: "guide-cube-mount" });
+}
+const STYLES = `
+@import url('https://fonts.googleapis.com/css2?family=Heebo:wght@400;500;600;700;800&display=swap');
+
+* { box-sizing: border-box; }
+html, body { margin:0; padding:0; }
+
+.app-root {
+  min-height: 100vh;
+  width: 100%;
+  background: #e4e4e6;
+  font-family: 'Heebo', system-ui, -apple-system, sans-serif;
+  color: #23232b;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  overflow-x: hidden;
+}
+
+.screen {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  padding: 20px 18px 28px;
+  max-width: 560px;
+  margin: 0 auto;
+  width: 100%;
+  min-height: 100vh;
+}
+
+/* ---------- buttons ---------- */
+.primary-btn, .secondary-btn, .capture-btn {
+  border: none;
+  border-radius: 18px;
+  padding: 14px 22px;
+  font-family: inherit;
+  font-size: 16px;
+  font-weight: 600;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  transition: transform 0.12s ease, box-shadow 0.12s ease, background 0.15s ease;
+}
+.primary-btn {
+  background: #dce2f8;
+  color: #24304f;
+  box-shadow: 0 3px 0 #b9c4ea, 0 6px 14px rgba(36,48,79,0.12);
+}
+.primary-btn:hover { background: #cfd8f5; }
+.primary-btn:active { transform: translateY(2px); box-shadow: 0 1px 0 #b9c4ea, 0 3px 8px rgba(36,48,79,0.12); }
+.primary-btn:disabled { opacity: 0.45; cursor: not-allowed; transform:none; }
+.primary-btn.full, .secondary-btn.full { width: 100%; }
+.not-cube-warning { margin-bottom: 14px; }
+
+.secondary-btn {
+  background: #f2f2f4;
+  color: #45455a;
+  border: 1.5px solid #d3d3da;
+}
+.secondary-btn:hover { background: #ebebee; }
+
+.icon-btn {
+  background: #ffffff;
+  border: none;
+  border-radius: 14px;
+  width: 38px; height: 38px;
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.08);
+  color: #45455a;
+}
+
+/* ---------- intro ---------- */
+.intro-screen { align-items: center; justify-content: center; text-align: center; gap: 14px; }
+.intro-icon {
+  width: 84px; height: 84px; border-radius: 26px;
+  background: linear-gradient(135deg, #dce2f8, #eef1fc);
+  display: flex; align-items: center; justify-content: center;
+  color: #4a5b9e;
+  box-shadow: 0 8px 24px rgba(74,91,158,0.18);
+  margin-bottom: 6px;
+}
+.intro-screen h1 { font-size: 26px; font-weight: 800; margin: 0; letter-spacing: -0.3px; }
+.intro-sub { color: #5a5a6a; font-size: 15.5px; line-height: 1.6; max-width: 400px; margin: 0 0 10px; }
+.intro-steps { list-style:none; padding:0; margin: 6px 0 22px; display:flex; flex-direction:column; gap:12px; width:100%; max-width:360px; }
+.intro-steps li {
+  display:flex; align-items:center; gap:12px; background:#fff; border-radius:16px; padding:12px 16px;
+  box-shadow: 0 2px 10px rgba(0,0,0,0.05); font-size:14.5px; text-align:right;
+}
+.step-num {
+  flex-shrink:0; width:26px; height:26px; border-radius:50%; background:#dce2f8; color:#24304f;
+  display:flex; align-items:center; justify-content:center; font-weight:700; font-size:13px;
+}
+
+/* ---------- scan ---------- */
+.scan-header { display:flex; align-items:center; justify-content:space-between; margin-bottom: 14px; }
+.scan-progress { display:flex; gap:6px; }
+.dot { width:8px; height:8px; border-radius:50%; background:#c7c7d1; }
+.dot-active { background:#5a6db8; width:20px; border-radius:5px; }
+.dot-done { background:#9aa8de; }
+
+.scan-title { font-size:20px; font-weight:700; margin:0 0 6px; }
+.accent { color:#4a5b9e; }
+.scan-guidance { color:#5a5a6a; font-size:14px; line-height:1.55; margin:0 0 16px; }
+
+.guide-cube-frame {
+  width:100%; height:30vh; max-height:230px; border-radius:22px; overflow:hidden;
+  background: radial-gradient(circle at 50% 40%, #eef1fc, #dce2f8);
+  margin-bottom:14px; touch-action:none;
+}
+.guide-cube-mount { width:100%; height:100%; }
+
+.camera-wrap {
+  position:relative; width:min(100%, 40vh); aspect-ratio:1/1; border-radius:24px; overflow:hidden;
+  background:#111; box-shadow: 0 6px 24px rgba(0,0,0,0.18); margin-bottom:18px; margin-inline:auto;
+}
+.camera-video { width:100%; height:100%; object-fit:cover; display:block; }
+.camera-error, .camera-loading {
+  position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center;
+  color:#eee; gap:10px; text-align:center; padding:20px; font-size:14px;
+}
+.frame-outline {
+  position:absolute; inset:6%; border:3px dashed rgba(255,255,255,0.65); border-radius:18px;
+  pointer-events:none;
+}
+
+.capture-btn {
+  background:#dce2f8; color:#24304f; width:100%; padding:16px; font-size:17px;
+  box-shadow: 0 3px 0 #b9c4ea, 0 8px 18px rgba(36,48,79,0.15);
+}
+.capture-btn:disabled { opacity:0.5; }
+
+/* ---------- review ---------- */
+.inspect-cube-frame {
+  width:100%; height:32vh; max-height:250px; border-radius:22px; overflow:hidden;
+  background: radial-gradient(circle at 50% 40%, #f2f3f7, #dcdce2);
+  margin-bottom:14px; touch-action:none;
+}
+
+.paint-label { font-size:13px; color:#5a5a6a; margin:2px 0 8px; }
+.paint-palette { display:flex; gap:10px; margin-bottom:8px; }
+.paint-swatch {
+  position:relative; flex:1; aspect-ratio:1/1; border-radius:14px; border:3px solid transparent;
+  cursor:pointer; box-shadow: inset 0 0 0 1px rgba(0,0,0,0.12);
+}
+.paint-swatch-active { border-color:#4a5b9e; transform:scale(1.08); }
+.paint-count {
+  position:absolute; bottom:3px; left:50%; transform:translateX(-50%);
+  background:rgba(255,255,255,0.9); color:#23232b; border-radius:8px; font-size:11px; font-weight:700;
+  padding:1px 6px; line-height:1.4;
+}
+.paint-count-bad { background:#ffe0e0; color:#c0392b; }
+.paint-hint { font-size:12px; color:#8a8a98; margin:0 0 18px; line-height:1.5; }
+
+.color-legend { display:flex; flex-wrap:wrap; gap:10px; margin-bottom:16px; }
+.legend-item { display:flex; align-items:center; gap:6px; font-size:12.5px; color:#5a5a6a; }
+.legend-swatch { width:16px; height:16px; border-radius:5px; box-shadow: inset 0 0 0 1px rgba(0,0,0,0.12); }
+
+.face-tabs { display:flex; gap:6px; overflow-x:auto; margin-bottom:16px; padding-bottom:4px; }
+.face-tab {
+  flex-shrink:0; border:none; background:#eeeef1; color:#5a5a6a; padding:8px 14px; border-radius:12px;
+  font-family:inherit; font-size:13.5px; font-weight:600; cursor:pointer;
+}
+.face-tab-active { background:#dce2f8; color:#24304f; }
+
+.review-grid {
+  display:grid; grid-template-columns:repeat(3,1fr); gap:8px; width:100%; max-width:320px;
+  margin: 0 auto 22px; aspect-ratio:1/1;
+}
+.review-cell {
+  border-radius:10px; border:2px solid rgba(0,0,0,0.08); cursor:pointer; aspect-ratio:1/1;
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,0.3);
+}
+.review-cell:active { transform: scale(0.94); }
+
+.review-actions { display:flex; flex-direction:column; gap:10px; margin-top:auto; }
+
+/* ---------- error / invalid ---------- */
+.error-hero { display:flex; flex-direction:column; align-items:center; gap:10px; margin:24px 0 18px; text-align:center; }
+.error-hero h2 { margin:0; font-size:20px; }
+.error-list { display:flex; flex-direction:column; gap:10px; margin-bottom:18px; }
+.error-item { display:flex; align-items:flex-start; gap:10px; background:#fff; border-radius:14px; padding:12px 14px; box-shadow:0 2px 8px rgba(0,0,0,0.05); }
+.error-dot { flex-shrink:0; width:8px; height:8px; border-radius:50%; background:#c0392b; margin-top:7px; }
+.error-item p { margin:0; font-size:14px; line-height:1.5; }
+.error-hint { color:#6a6a7a; font-size:13.5px; line-height:1.6; margin-bottom:20px; }
+.permission-flash { margin-bottom:14px; animation: flashIn 0.35s ease; }
+@keyframes flashIn { 0% { transform: scale(0.97); opacity:0.4; } 100% { transform: scale(1); opacity:1; } }
+.permission-howto { background:#fff; border-radius:16px; padding:14px 16px; margin-bottom:18px; text-align:right; box-shadow:0 2px 8px rgba(0,0,0,0.05); }
+.permission-howto-title { font-size:13.5px; font-weight:600; margin:0 0 8px; }
+.permission-howto-list { margin:0 0 10px; padding-inline-start:20px; font-size:13px; line-height:1.7; color:#3a3a48; }
+.permission-howto-note { font-size:12px; color:#8a8a98; margin:0; line-height:1.5; }
+
+/* ---------- 3D / player ---------- */
+.player-screen { padding-top:14px; }
+.cube3d-frame {
+  width:100%; aspect-ratio:1/1; max-height:46vh; border-radius:24px; overflow:hidden;
+  background: radial-gradient(circle at 50% 35%, #f2f3f7, #dcdce2);
+  box-shadow: inset 0 0 0 1px rgba(0,0,0,0.04);
+  touch-action:none;
+}
+.cube3d-mount { width:100%; height:100%; }
+
+.move-info-card {
+  background:#fff; border-radius:18px; padding:16px 18px; margin:16px 0; text-align:center;
+  box-shadow: 0 2px 12px rgba(0,0,0,0.06);
+}
+.move-notation { font-size:32px; font-weight:800; color:#24304f; letter-spacing:1px; }
+.move-info-main { margin:4px 0 6px; font-size:14.5px; color:#3a3a48; min-height:20px; }
+.move-counter { margin:0; font-size:12.5px; color:#8a8a98; }
+
+.player-controls { display:flex; align-items:center; justify-content:center; gap:18px; margin-bottom:14px; }
+.player-btn {
+  width:52px; height:52px; border-radius:50%; border:none; background:#fff; color:#3a3a48;
+  display:flex; align-items:center; justify-content:center; cursor:pointer; box-shadow:0 3px 10px rgba(0,0,0,0.1);
+}
+.player-btn:disabled { opacity:0.35; }
+.player-btn-main { width:68px; height:68px; background:#dce2f8; color:#24304f; box-shadow:0 4px 14px rgba(36,48,79,0.22); }
+
+.speed-row { display:flex; align-items:center; gap:10px; font-size:13px; color:#5a5a6a; padding:0 6px; }
+.speed-row input[type=range] { flex:1; accent-color:#5a6db8; }
+
+.solved-banner {
+  margin-top:14px; background:#e4f5e9; color:#1f7a3d; padding:12px 16px; border-radius:14px;
+  display:flex; align-items:center; gap:8px; justify-content:center; font-weight:600; font-size:14.5px;
+}
+
+/* ---------- misc ---------- */
+.overlay-loading {
+  position:fixed; inset:0; background:rgba(228,228,230,0.92); display:flex; flex-direction:column;
+  align-items:center; justify-content:center; gap:14px; z-index:50; font-size:15px; color:#3a3a48;
+}
+.spinner {
+  width:34px; height:34px; border-radius:50%; border:3px solid #c9cfe8; border-top-color:#4a5b9e;
+  animation: spin 0.8s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.restart-fab {
+  position:fixed; bottom:16px; left:16px; width:42px; height:42px; border-radius:50%; border:none;
+  background:#fff; color:#5a5a6a; box-shadow:0 3px 12px rgba(0,0,0,0.15); display:flex;
+  align-items:center; justify-content:center; cursor:pointer; z-index:20;
+}
+
+@media (min-width: 640px) {
+  .screen { padding-top: 32px; }
+}
+`;
+function StyleInjector() {
+  return /* @__PURE__ */ React.createElement("style", null, STYLES);
+}
+function PlayerScreen({ solution, currentMoveIndex, setCurrentMoveIndex, playing, setPlaying, speed, setSpeed, initialCube, animBusy, setAnimBusy }) {
+  const total = solution.length;
+  const currentMove = currentMoveIndex >= 0 ? solution[currentMoveIndex] : null;
+  const nextMove = currentMoveIndex < total - 1 ? solution[currentMoveIndex + 1] : null;
+  useEffect(() => {
+    if (!playing) return;
+    if (animBusy) return;
+    if (currentMoveIndex >= total - 1) {
+      setPlaying(false);
+      return;
+    }
+    const id = setTimeout(() => setCurrentMoveIndex((i) => Math.min(total - 1, i + 1)), 120);
+    return () => clearTimeout(id);
+  }, [playing, animBusy, currentMoveIndex, total]);
+  return /* @__PURE__ */ React.createElement("div", { className: "screen player-screen" }, /* @__PURE__ */ React.createElement("div", { className: "cube3d-frame" }, /* @__PURE__ */ React.createElement(
+    Cube3D,
+    {
+      initialCube,
+      movesQueue: solution,
+      currentMoveIndex,
+      onAnimStateChange: setAnimBusy,
+      speed
+    }
+  )), /* @__PURE__ */ React.createElement("div", { className: "move-info-card" }, currentMoveIndex < 0 ? /* @__PURE__ */ React.createElement("p", { className: "move-info-main" }, '\u05D4\u05E7\u05D5\u05D1\u05D9\u05D9\u05D4 \u05DB\u05E4\u05D9 \u05E9\u05E0\u05E1\u05E8\u05E7\u05D4. \u05DC\u05D7\u05E5 "\u05D4\u05E4\u05E2\u05DC" \u05DB\u05D3\u05D9 \u05DC\u05D4\u05EA\u05D7\u05D9\u05DC \u05D1\u05E4\u05EA\u05E8\u05D5\u05DF.') : /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement("div", { className: "move-notation" }, currentMove), /* @__PURE__ */ React.createElement("p", { className: "move-info-main" }, moveDescriptionHebrew(currentMove))), /* @__PURE__ */ React.createElement("p", { className: "move-counter" }, "\u05DE\u05D4\u05DC\u05DA ", Math.max(0, currentMoveIndex + 1), " \u05DE\u05EA\u05D5\u05DA ", total)), /* @__PURE__ */ React.createElement("div", { className: "player-controls" }, /* @__PURE__ */ React.createElement("button", { className: "player-btn", onClick: () => setCurrentMoveIndex((i) => Math.max(-1, i - 1)), disabled: currentMoveIndex < 0 || animBusy }, /* @__PURE__ */ React.createElement(SkipForward, { size: 22, style: { transform: "scaleX(-1)" } })), /* @__PURE__ */ React.createElement("button", { className: "player-btn player-btn-main", onClick: () => setPlaying((p) => !p), disabled: currentMoveIndex >= total - 1 }, playing ? /* @__PURE__ */ React.createElement(Pause, { size: 26 }) : /* @__PURE__ */ React.createElement(Play, { size: 26 })), /* @__PURE__ */ React.createElement("button", { className: "player-btn", onClick: () => setCurrentMoveIndex((i) => Math.min(total - 1, i + 1)), disabled: currentMoveIndex >= total - 1 || animBusy }, /* @__PURE__ */ React.createElement(SkipForward, { size: 22 }))), /* @__PURE__ */ React.createElement("div", { className: "speed-row" }, /* @__PURE__ */ React.createElement("span", null, "\u05DE\u05D4\u05D9\u05E8\u05D5\u05EA"), /* @__PURE__ */ React.createElement("input", { type: "range", min: "0.5", max: "3", step: "0.5", value: speed, onChange: (e) => setSpeed(parseFloat(e.target.value)) }), /* @__PURE__ */ React.createElement("span", null, speed, "\xD7")), currentMoveIndex >= total - 1 && /* @__PURE__ */ React.createElement("div", { className: "solved-banner" }, /* @__PURE__ */ React.createElement(CheckCircle2, { size: 20 }), " \u05D4\u05E7\u05D5\u05D1\u05D9\u05D9\u05D4 \u05E4\u05EA\u05D5\u05E8\u05D4!"));
+}
+function IntroScreen({ onStart }) {
+  return /* @__PURE__ */ React.createElement("div", { className: "screen intro-screen" }, /* @__PURE__ */ React.createElement("div", { className: "intro-icon" }, /* @__PURE__ */ React.createElement(Sparkles, { size: 40 })), /* @__PURE__ */ React.createElement("h1", null, "\u05E4\u05D5\u05EA\u05E8 \u05E7\u05D5\u05D1\u05D9\u05D5\u05EA \u05D4\u05D5\u05E0\u05D2\u05E8\u05D9\u05D5\u05EA"), /* @__PURE__ */ React.createElement("p", { className: "intro-sub" }, "\u05E1\u05E8\u05D5\u05E7 \u05D0\u05EA \u05E9\u05E9 \u05D4\u05E4\u05D0\u05D5\u05EA \u05E9\u05DC \u05D4\u05E7\u05D5\u05D1\u05D9\u05D9\u05D4 \u05E9\u05DC\u05DA, \u05D5\u05EA\u05E7\u05D1\u05DC \u05E4\u05EA\u05E8\u05D5\u05DF \u05DE\u05DC\u05D0 \u05E2\u05DD \u05D4\u05D3\u05D2\u05DE\u05D4 \u05EA\u05DC\u05EA-\u05DE\u05DE\u05D3\u05D9\u05EA \u05E6\u05E2\u05D3-\u05D0\u05D7\u05E8-\u05E6\u05E2\u05D3."), /* @__PURE__ */ React.createElement("ul", { className: "intro-steps" }, /* @__PURE__ */ React.createElement("li", null, /* @__PURE__ */ React.createElement("span", { className: "step-num" }, "1"), " \u05E6\u05DC\u05DD \u05DB\u05DC \u05D0\u05D7\u05EA \u05DE\u05E9\u05E9 \u05D4\u05E4\u05D0\u05D5\u05EA"), /* @__PURE__ */ React.createElement("li", null, /* @__PURE__ */ React.createElement("span", { className: "step-num" }, "2"), " \u05D0\u05E9\u05E8 \u05E9\u05D4\u05E6\u05D1\u05E2\u05D9\u05DD \u05D6\u05D5\u05D4\u05D5 \u05E0\u05DB\u05D5\u05DF"), /* @__PURE__ */ React.createElement("li", null, /* @__PURE__ */ React.createElement("span", { className: "step-num" }, "3"), " \u05E6\u05E4\u05D4 \u05D1\u05E4\u05EA\u05E8\u05D5\u05DF \u05D1\u05EA\u05DC\u05EA-\u05DE\u05DE\u05D3, \u05E6\u05E2\u05D3 \u05D0\u05D7\u05E8 \u05E6\u05E2\u05D3")), /* @__PURE__ */ React.createElement("button", { className: "primary-btn full", onClick: onStart }, "\u05D4\u05EA\u05D7\u05DC \u05E1\u05E8\u05D9\u05E7\u05D4"));
+}
+function App() {
+  const [screen, setScreen] = useState("intro");
+  const [faceIdx, setFaceIdx] = useState(0);
+  const [cameraStream, setCameraStream] = useState(null);
+  const [rawCaptures, setRawCaptures] = useState({});
+  const startScanFlow = async () => {
+    let alreadyGranted = false;
+    try {
+      if (navigator.permissions && navigator.permissions.query) {
+        const status = await navigator.permissions.query({ name: "camera" });
+        alreadyGranted = status.state === "granted";
+      }
+    } catch (e) {
+    }
+    if (alreadyGranted && navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: { ideal: "environment" }, width: { ideal: 1280 }, height: { ideal: 1280 } }
+        });
+        setCameraStream(stream);
+        setFaceIdx(0);
+        setScreen("scan");
+        return;
+      } catch (e) {
+      }
+    }
+    setScreen("permission");
+  };
+  const [reviewFaceIdx, setReviewFaceIdx] = useState(0);
+  const [validationResult, setValidationResult] = useState(null);
+  const [solverError, setSolverError] = useState(null);
+  const [solution, setSolution] = useState([]);
+  const [displayCube, setDisplayCube] = useState(null);
+  const [currentMoveIndex, setCurrentMoveIndex] = useState(-1);
+  const [playing, setPlaying] = useState(false);
+  const [speed, setSpeed] = useState(0.7);
+  const [animBusy, setAnimBusy] = useState(false);
+  const [solverReady, setSolverReady] = useState(false);
+  const [solving, setSolving] = useState(false);
+  useEffect(() => {
+    const id = setTimeout(() => {
+      try {
+        CubeLib.initSolver();
+        setSolverReady(true);
+      } catch (e) {
+        setSolverReady(true);
+      }
+    }, 10);
+    return () => clearTimeout(id);
+  }, []);
+  const handleCapture = (face, colorIndices) => {
+    const next = { ...rawCaptures, [face]: colorIndices };
+    setRawCaptures(next);
+    if (faceIdx < 5) {
+      setFaceIdx(faceIdx + 1);
+    } else {
+      setReviewFaceIdx(0);
+      setScreen("review");
+    }
+  };
+  const handleChangeCell = (face, cellIdx, colorIdx) => {
+    setRawCaptures((prev) => {
+      const arr = prev[face].slice();
+      arr[cellIdx] = typeof colorIdx === "number" ? colorIdx : (arr[cellIdx] + 1) % CUBE_COLORS.length;
+      return { ...prev, [face]: arr };
+    });
+  };
+  const handleRescanFace = (idxInOrder) => {
+    setFaceIdx(idxInOrder);
+    setScreen("scan");
+  };
+  const runValidationAndSolve = () => {
+    let facelet = "";
+    FACE_ORDER.forEach((f) => {
+      rawCaptures[f].forEach((pIdx) => {
+        facelet += COLOR_LETTERS[pIdx];
+      });
+    });
+    const result = validateCube(facelet);
+    if (!result.valid) {
+      setValidationResult(result);
+      setScreen("invalid");
+      return;
+    }
+    setSolving(true);
+    setTimeout(() => {
+      try {
+        const { solution: sol, geoCube } = solveFromScan(facelet);
+        const withDisplay = geoCube.map((c) => ({
+          ...c,
+          stickers: c.stickers.map((s) => ({ ...s, displayColor: CUBE_COLORS[COLOR_LETTERS.indexOf(s.color)].css }))
+        }));
+        setSolution(sol);
+        setDisplayCube(withDisplay);
+        setCurrentMoveIndex(-1);
+        setSolving(false);
+        setScreen("player");
+      } catch (e) {
+        setSolverError("\u05D0\u05D9\u05E8\u05E2\u05D4 \u05E9\u05D2\u05D9\u05D0\u05D4 \u05D1\u05E4\u05EA\u05E8\u05D5\u05DF \u05D4\u05E7\u05D5\u05D1\u05D9\u05D9\u05D4. \u05E0\u05E1\u05D4 \u05DC\u05E1\u05E8\u05D5\u05E7 \u05E9\u05D5\u05D1.");
+        setSolving(false);
+        setScreen("invalid");
+        setValidationResult({ errors: [{ message: "\u05D0\u05D9\u05E8\u05E2\u05D4 \u05E9\u05D2\u05D9\u05D0\u05D4 \u05E4\u05E0\u05D9\u05DE\u05D9\u05EA \u05D1\u05E2\u05EA \u05E0\u05D9\u05E1\u05D9\u05D5\u05DF \u05DC\u05E4\u05EA\u05D5\u05E8 \u05D0\u05EA \u05D4\u05E7\u05D5\u05D1\u05D9\u05D9\u05D4." }] });
+      }
+    }, 30);
+  };
+  const restart = () => {
+    if (cameraStream) cameraStream.getTracks().forEach((t) => t.stop());
+    setCameraStream(null);
+    setScreen("intro");
+    setFaceIdx(0);
+    setRawCaptures({});
+    setValidationResult(null);
+    setSolution([]);
+    setDisplayCube(null);
+    setCurrentMoveIndex(-1);
+    setPlaying(false);
+  };
+  return /* @__PURE__ */ React.createElement("div", { className: "app-root", dir: "rtl" }, /* @__PURE__ */ React.createElement(StyleInjector, null), screen === "intro" && /* @__PURE__ */ React.createElement(IntroScreen, { onStart: startScanFlow }), screen === "permission" && /* @__PURE__ */ React.createElement(PermissionScreen, { onGranted: (stream) => {
+    setCameraStream(stream);
+    setFaceIdx(0);
+    setScreen("scan");
+  } }), screen === "scan" && cameraStream && /* @__PURE__ */ React.createElement(
+    ScanScreen,
+    {
+      faceIdx,
+      stream: cameraStream,
+      rawCaptures,
+      onCapture: handleCapture,
+      onBack: () => faceIdx === 0 ? setScreen("intro") : setFaceIdx(faceIdx - 1)
+    }
+  ), screen === "review" && /* @__PURE__ */ React.createElement(
+    ReviewScreen,
+    {
+      rawCaptures,
+      onChangeCell: handleChangeCell,
+      onConfirm: runValidationAndSolve,
+      onRescanFace: handleRescanFace,
+      faceOrderIdx: reviewFaceIdx,
+      setFaceOrderIdx: setReviewFaceIdx
+    }
+  ), screen === "invalid" && validationResult && /* @__PURE__ */ React.createElement(ValidationErrorScreen, { result: validationResult, onBack: () => setScreen("review") }), screen === "player" && displayCube && /* @__PURE__ */ React.createElement(
+    PlayerScreen,
+    {
+      solution,
+      currentMoveIndex,
+      setCurrentMoveIndex,
+      playing,
+      setPlaying,
+      speed,
+      setSpeed,
+      initialCube: displayCube,
+      animBusy,
+      setAnimBusy
+    }
+  ), solving && /* @__PURE__ */ React.createElement("div", { className: "overlay-loading" }, /* @__PURE__ */ React.createElement("div", { className: "spinner" }), /* @__PURE__ */ React.createElement("p", null, "\u05DE\u05D7\u05E9\u05D1 \u05E4\u05EA\u05E8\u05D5\u05DF\u2026")), screen !== "intro" && /* @__PURE__ */ React.createElement("button", { className: "restart-fab", onClick: restart, title: "\u05D4\u05EA\u05D7\u05DC \u05DE\u05D7\u05D3\u05E9" }, /* @__PURE__ */ React.createElement(RotateCcw, { size: 18 })));
+}
+const rootEl = document.getElementById("root");
+try {
+  const root = ReactDOM.createRoot(rootEl);
+  root.render(/* @__PURE__ */ React.createElement(App, null));
+} catch (e) {
+  const box = document.getElementById("boot-error");
+  box.textContent = "\u05E9\u05D2\u05D9\u05D0\u05EA \u05D4\u05E4\u05E2\u05DC\u05D4 (render): " + e.message + "\n\n" + (e.stack || "");
+  box.className = "show";
+}
+</script>
+</body>
+</html>
