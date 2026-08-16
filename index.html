@@ -2534,8 +2534,16 @@ function detectCubeRegion(imageData) {
       if (!best || result.score > best.score) best = { ...result, x0, y0, size };
     }
   }
-  if (!best || best.score < CUBE_REGION_CONFIDENCE_MIN) return { found: false };
-  return { found: true, x0: best.x0, y0: best.y0, size: best.size, colBoundaries: best.colBoundaries.map((v) => v + best.x0), rowBoundaries: best.rowBoundaries.map((v) => v + best.y0), score: best.score };
+  const confident = !!best && best.score >= CUBE_REGION_CONFIDENCE_MIN;
+  if (confident) {
+    return { found: true, confident: true, x0: best.x0, y0: best.y0, size: best.size, colBoundaries: best.colBoundaries.map((v) => v + best.x0), rowBoundaries: best.rowBoundaries.map((v) => v + best.y0), score: best.score };
+  }
+  // Not confident (or nothing scored at all) - fall back to the on-screen framing guide's region
+  // (the ~90%-of-frame square the person was told to fit the cube into) rather than giving up.
+  // This guarantees there is always something usable to sample, with an even 3x3 split.
+  const size = Math.round(frameSize * 0.9);
+  const x0 = Math.round(cx0 - size / 2), y0 = Math.round(cy0 - size / 2);
+  return { found: true, confident: false, x0, y0, size, colBoundaries: [x0, x0 + size / 3, x0 + 2 * size / 3, x0 + size], rowBoundaries: [y0, y0 + size / 3, y0 + 2 * size / 3, y0 + size], score: best ? best.score : 0 };
 }
 function sampleAverageColor(imageData, cx, cy, radius) {
   const { data, width, height } = imageData;
@@ -2569,9 +2577,6 @@ function sampleCellRobust(imageData, x0, x1, y0, y1) {
 const NOT_A_CUBE_DISTANCE = 130;
 function analyzeFaceCapture(imageData) {
   const region = detectCubeRegion(imageData);
-  if (!region.found) {
-    return { colorIndices: null, rgbs: null, looksLikeCube: false, reason: "no-cube-found" };
-  }
   const { colBoundaries, rowBoundaries } = region;
   const colorIndices = [];
   const rgbs = [];
@@ -2585,8 +2590,9 @@ function analyzeFaceCapture(imageData) {
     distances.push(distance);
   }
   const badCells = distances.filter((d) => d > NOT_A_CUBE_DISTANCE).length;
-  const looksLikeCube = badCells <= 4;
-  return { colorIndices, rgbs, looksLikeCube, reason: looksLikeCube ? null : "bad-colors", region };
+  const looksLikeCube = region.confident && badCells <= 4;
+  const reason = !region.confident ? "low-confidence" : badCells > 4 ? "bad-colors" : null;
+  return { colorIndices, rgbs, looksLikeCube, reason, region };
 }
 const FACE_SEQUENCE = ["F", "R", "B", "L", "U", "D"];
 const FACE_LABEL_HE = { U: "\u05E2\u05DC\u05D9\u05D5\u05E0\u05D4", R: "\u05D9\u05DE\u05E0\u05D9\u05EA", F: "\u05E7\u05D3\u05DE\u05D9\u05EA", D: "\u05EA\u05D7\u05EA\u05D5\u05E0\u05D4", L: "\u05E9\u05DE\u05D0\u05DC\u05D9\u05EA", B: "\u05D0\u05D7\u05D5\u05E8\u05D9\u05EA" };
@@ -2701,7 +2707,7 @@ function ScanScreen({ faceIdx, stream, rawCaptures, onCapture, onBack }) {
     setNotCubeWarning(false);
     onCapture(face, colorIndices);
   };
-  return /* @__PURE__ */ React.createElement("div", { className: "screen scan-screen" }, /* @__PURE__ */ React.createElement("div", { className: "scan-header" }, /* @__PURE__ */ React.createElement("button", { className: "icon-btn", onClick: onBack, "aria-label": "\u05D7\u05D6\u05E8\u05D4" }, /* @__PURE__ */ React.createElement(ChevronRight, { size: 22 })), /* @__PURE__ */ React.createElement("div", { className: "scan-progress" }, FACE_SEQUENCE.map((f, i) => /* @__PURE__ */ React.createElement("div", { key: f, className: `dot ${i === faceIdx ? "dot-active" : ""} ${i < faceIdx ? "dot-done" : ""}` }))), /* @__PURE__ */ React.createElement("div", { style: { width: 38 } })), /* @__PURE__ */ React.createElement("h2", { className: "scan-title" }, "\u05E1\u05E8\u05D5\u05E7 \u05E4\u05D0\u05D4 ", faceIdx + 1, " \u05DE\u05EA\u05D5\u05DA 6: ", /* @__PURE__ */ React.createElement("span", { className: "accent" }, FACE_LABEL_HE[face])), /* @__PURE__ */ React.createElement("p", { className: "scan-guidance" }, FACE_GUIDANCE_HE[face]), /* @__PURE__ */ React.createElement("div", { className: "guide-cube-frame" }, /* @__PURE__ */ React.createElement(GuideCube3D, { targetFace: face, capturedColors })), /* @__PURE__ */ React.createElement("div", { className: "camera-wrap" }, /* @__PURE__ */ React.createElement("video", { ref: videoRef, className: "camera-video", style: mirrored ? { transform: "scaleX(-1)" } : void 0, playsInline: true, muted: true }), /* @__PURE__ */ React.createElement("div", { className: "frame-outline" }), !ready && /* @__PURE__ */ React.createElement("div", { className: "camera-loading" }, "\u05E4\u05D5\u05EA\u05D7 \u05DE\u05E6\u05DC\u05DE\u05D4\u2026")), notCubeWarning && /* @__PURE__ */ React.createElement("div", { className: "not-cube-warning" }, /* @__PURE__ */ React.createElement("div", { className: "error-item", style: { marginBottom: 10 } }, /* @__PURE__ */ React.createElement("span", { className: "error-dot" }), /* @__PURE__ */ React.createElement("p", null, notCubeWarning.reason === "no-cube-found" ? "\u05DC\u05D0 \u05D6\u05D5\u05D4\u05D4 \u05E7\u05D5\u05D1\u05D9\u05D9\u05D4 \u05D1\u05EA\u05DE\u05D5\u05E0\u05D4 - \u05D5\u05D3\u05D0 \u05E9\u05D4\u05E4\u05D0\u05D4 \u05DE\u05DE\u05DC\u05D0\u05D4 \u05D0\u05EA \u05D4\u05DE\u05E1\u05D2\u05E8\u05EA \u05D5\u05E9\u05D4\u05EA\u05D0\u05D5\u05E8\u05D4 \u05D8\u05D5\u05D1\u05D4, \u05D5\u05E0\u05E1\u05D4 \u05E9\u05D5\u05D1." : "\u05D4\u05E6\u05D9\u05DC\u05D5\u05DD \u05DC\u05D0 \u05D1\u05E8\u05D5\u05E8 \u05DE\u05E1\u05E4\u05D9\u05E7 - \u05D0\u05E4\u05E9\u05E8 \u05DC\u05E0\u05E1\u05D5\u05EA \u05E9\u05D5\u05D1, \u05D0\u05D5 \u05DC\u05D4\u05DE\u05E9\u05D9\u05DA \u05E2\u05DD \u05D4\u05E6\u05D9\u05DC\u05D5\u05DD \u05D4\u05D6\u05D4 \u05D5\u05DC\u05EA\u05E7\u05DF \u05E6\u05D1\u05E2\u05D9\u05DD \u05D9\u05D3\u05E0\u05D9\u05EA \u05D0\u05D7\u05E8 \u05DB\u05DA.")), notCubeWarning.colorIndices && /* @__PURE__ */ React.createElement("button", { className: "secondary-btn full", onClick: () => {
+  return /* @__PURE__ */ React.createElement("div", { className: "screen scan-screen" }, /* @__PURE__ */ React.createElement("div", { className: "scan-header" }, /* @__PURE__ */ React.createElement("button", { className: "icon-btn", onClick: onBack, "aria-label": "\u05D7\u05D6\u05E8\u05D4" }, /* @__PURE__ */ React.createElement(ChevronRight, { size: 22 })), /* @__PURE__ */ React.createElement("div", { className: "scan-progress" }, FACE_SEQUENCE.map((f, i) => /* @__PURE__ */ React.createElement("div", { key: f, className: `dot ${i === faceIdx ? "dot-active" : ""} ${i < faceIdx ? "dot-done" : ""}` }))), /* @__PURE__ */ React.createElement("div", { style: { width: 38 } })), /* @__PURE__ */ React.createElement("h2", { className: "scan-title" }, "\u05E1\u05E8\u05D5\u05E7 \u05E4\u05D0\u05D4 ", faceIdx + 1, " \u05DE\u05EA\u05D5\u05DA 6: ", /* @__PURE__ */ React.createElement("span", { className: "accent" }, FACE_LABEL_HE[face])), /* @__PURE__ */ React.createElement("p", { className: "scan-guidance" }, FACE_GUIDANCE_HE[face]), /* @__PURE__ */ React.createElement("div", { className: "guide-cube-frame" }, /* @__PURE__ */ React.createElement(GuideCube3D, { targetFace: face, capturedColors })), /* @__PURE__ */ React.createElement("div", { className: "camera-wrap" }, /* @__PURE__ */ React.createElement("video", { ref: videoRef, className: "camera-video", style: mirrored ? { transform: "scaleX(-1)" } : void 0, playsInline: true, muted: true }), /* @__PURE__ */ React.createElement("div", { className: "frame-outline" }), !ready && /* @__PURE__ */ React.createElement("div", { className: "camera-loading" }, "\u05E4\u05D5\u05EA\u05D7 \u05DE\u05E6\u05DC\u05DE\u05D4\u2026")), notCubeWarning && /* @__PURE__ */ React.createElement("div", { className: "not-cube-warning" }, /* @__PURE__ */ React.createElement("div", { className: "error-item", style: { marginBottom: 10 } }, /* @__PURE__ */ React.createElement("span", { className: "error-dot" }), /* @__PURE__ */ React.createElement("p", null, notCubeWarning.reason === "low-confidence" ? "לא הצלחתי לזהות בביטחון מלא את גבולות הקובייה, אז דגמתי מהמסגרת שלמעלה. כדאי לבדוק את הצבעים במסך הבדיקה בסוף." : "\u05D4\u05E6\u05D9\u05DC\u05D5\u05DD \u05DC\u05D0 \u05D1\u05E8\u05D5\u05E8 \u05DE\u05E1\u05E4\u05D9\u05E7 - \u05D0\u05E4\u05E9\u05E8 \u05DC\u05E0\u05E1\u05D5\u05EA \u05E9\u05D5\u05D1, \u05D0\u05D5 \u05DC\u05D4\u05DE\u05E9\u05D9\u05DA \u05E2\u05DD \u05D4\u05E6\u05D9\u05DC\u05D5\u05DD \u05D4\u05D6\u05D4 \u05D5\u05DC\u05EA\u05E7\u05DF \u05E6\u05D1\u05E2\u05D9\u05DD \u05D9\u05D3\u05E0\u05D9\u05EA \u05D0\u05D7\u05E8 \u05DB\u05DA.")), notCubeWarning.colorIndices && /* @__PURE__ */ React.createElement("button", { className: "secondary-btn full", onClick: () => {
     onCapture(face, notCubeWarning.colorIndices);
     setNotCubeWarning(false);
   } }, "\u05D4\u05DE\u05E9\u05DA \u05D1\u05DB\u05DC \u05D6\u05D0\u05EA \u05E2\u05DD \u05E6\u05D9\u05DC\u05D5\u05DD \u05D6\u05D4")), /* @__PURE__ */ React.createElement("button", { className: "capture-btn", onClick: capture, disabled: !ready }, /* @__PURE__ */ React.createElement(Camera, { size: 22 }), " \u05E6\u05DC\u05DD \u05E4\u05D0\u05D4 \u05D6\u05D5"), /* @__PURE__ */ React.createElement("canvas", { ref: canvasRef, style: { display: "none" } }));
