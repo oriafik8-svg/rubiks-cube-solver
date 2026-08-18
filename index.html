@@ -2534,8 +2534,16 @@ function detectCubeRegion(imageData) {
       if (!best || result.score > best.score) best = { ...result, x0, y0, size };
     }
   }
-  if (!best || best.score < CUBE_REGION_CONFIDENCE_MIN) return { found: false };
-  return { found: true, x0: best.x0, y0: best.y0, size: best.size, colBoundaries: best.colBoundaries.map((v) => v + best.x0), rowBoundaries: best.rowBoundaries.map((v) => v + best.y0), score: best.score };
+  const confident = !!best && best.score >= CUBE_REGION_CONFIDENCE_MIN;
+  if (confident) {
+    return { found: true, confident: true, x0: best.x0, y0: best.y0, size: best.size, colBoundaries: best.colBoundaries.map((v) => v + best.x0), rowBoundaries: best.rowBoundaries.map((v) => v + best.y0), score: best.score };
+  }
+  // Not confident (or nothing scored at all) - fall back to the on-screen framing guide's region
+  // (the ~90%-of-frame square the person was told to fit the cube into) rather than giving up.
+  // This guarantees there is always something usable to sample, with an even 3x3 split.
+  const size = Math.round(frameSize * 0.9);
+  const x0 = Math.round(cx0 - size / 2), y0 = Math.round(cy0 - size / 2);
+  return { found: true, confident: false, x0, y0, size, colBoundaries: [x0, x0 + size / 3, x0 + 2 * size / 3, x0 + size], rowBoundaries: [y0, y0 + size / 3, y0 + 2 * size / 3, y0 + size], score: best ? best.score : 0 };
 }
 function sampleAverageColor(imageData, cx, cy, radius) {
   const { data, width, height } = imageData;
@@ -2569,9 +2577,6 @@ function sampleCellRobust(imageData, x0, x1, y0, y1) {
 const NOT_A_CUBE_DISTANCE = 130;
 function analyzeFaceCapture(imageData) {
   const region = detectCubeRegion(imageData);
-  if (!region.found) {
-    return { colorIndices: null, rgbs: null, looksLikeCube: false, reason: "no-cube-found" };
-  }
   const { colBoundaries, rowBoundaries } = region;
   const colorIndices = [];
   const rgbs = [];
@@ -2585,8 +2590,9 @@ function analyzeFaceCapture(imageData) {
     distances.push(distance);
   }
   const badCells = distances.filter((d) => d > NOT_A_CUBE_DISTANCE).length;
-  const looksLikeCube = badCells <= 4;
-  return { colorIndices, rgbs, looksLikeCube, reason: looksLikeCube ? null : "bad-colors", region };
+  const looksLikeCube = region.confident && badCells <= 4;
+  const reason = !region.confident ? "low-confidence" : badCells > 4 ? "bad-colors" : null;
+  return { colorIndices, rgbs, looksLikeCube, reason, region };
 }
 const FACE_SEQUENCE = ["F", "R", "B", "L", "U", "D"];
 const FACE_LABEL_HE = { U: "\u05E2\u05DC\u05D9\u05D5\u05E0\u05D4", R: "\u05D9\u05DE\u05E0\u05D9\u05EA", F: "\u05E7\u05D3\u05DE\u05D9\u05EA", D: "\u05EA\u05D7\u05EA\u05D5\u05E0\u05D4", L: "\u05E9\u05DE\u05D0\u05DC\u05D9\u05EA", B: "\u05D0\u05D7\u05D5\u05E8\u05D9\u05EA" };
@@ -2647,20 +2653,72 @@ function PermissionScreen({ onGranted }) {
   }
   return /* @__PURE__ */ React.createElement("div", { className: "screen intro-screen" }, /* @__PURE__ */ React.createElement("div", { className: "intro-icon" }, /* @__PURE__ */ React.createElement(Camera, { size: 38 })), /* @__PURE__ */ React.createElement("h1", null, "\u05D2\u05D9\u05E9\u05D4 \u05DC\u05DE\u05E6\u05DC\u05DE\u05D4"), /* @__PURE__ */ React.createElement("p", { className: "intro-sub" }, "\u05DB\u05D3\u05D9 \u05DC\u05E1\u05E8\u05D5\u05E7 \u05D0\u05EA \u05E4\u05D0\u05D5\u05EA \u05D4\u05E7\u05D5\u05D1\u05D9\u05D9\u05D4, \u05D4\u05D0\u05E4\u05DC\u05D9\u05E7\u05E6\u05D9\u05D4 \u05E6\u05E8\u05D9\u05DB\u05D4 \u05D2\u05D9\u05E9\u05D4 \u05DC\u05DE\u05E6\u05DC\u05DE\u05D4. \u05DC\u05D7\u05D9\u05E6\u05D4 \u05E2\u05DC \u05D4\u05DB\u05E4\u05EA\u05D5\u05E8 \u05EA\u05D5\u05E4\u05D9\u05E2 \u05D1\u05E7\u05E9\u05EA \u05D0\u05D9\u05E9\u05D5\u05E8 \u05E9\u05DC \u05D4\u05D3\u05E4\u05D3\u05E4\u05DF - \u05D9\u05E9 \u05DC\u05D0\u05E9\u05E8 \u05D0\u05D5\u05EA\u05D4 \u05DB\u05D3\u05D9 \u05DC\u05D4\u05DE\u05E9\u05D9\u05DA."), diag && /* @__PURE__ */ React.createElement("div", { key: attempt, className: "permission-howto permission-flash" }, /* @__PURE__ */ React.createElement("p", { className: "permission-howto-title" }, "\u05E0\u05D9\u05E1\u05D9\u05D5\u05DF ", attempt, ": ", diag.title), /* @__PURE__ */ React.createElement("ul", { className: "permission-howto-list" }, diag.lines.map((line, i) => /* @__PURE__ */ React.createElement("li", { key: i }, line)))), /* @__PURE__ */ React.createElement("button", { className: "primary-btn full", onClick: requestCamera, disabled: state === "requesting" }, /* @__PURE__ */ React.createElement(Camera, { size: 18 }), " ", state === "requesting" ? "\u05DE\u05DE\u05EA\u05D9\u05DF \u05DC\u05D0\u05D9\u05E9\u05D5\u05E8\u2026" : attempt > 0 ? "\u05E0\u05E1\u05D4 \u05E9\u05D5\u05D1" : "\u05D0\u05E4\u05E9\u05E8 \u05D2\u05D9\u05E9\u05D4 \u05DC\u05DE\u05E6\u05DC\u05DE\u05D4"));
 }
+function sampleColorsForBox(imageData, x0, y0, size) {
+  const colB = [x0, x0 + size / 3, x0 + 2 * size / 3, x0 + size];
+  const rowB = [y0, y0 + size / 3, y0 + 2 * size / 3, y0 + size];
+  const colorIndices = [];
+  for (let row = 0; row < 3; row++) for (let col = 0; col < 3; col++) {
+    const { index } = sampleCellRobust(imageData, colB[col], colB[col + 1], rowB[row], rowB[row + 1]);
+    colorIndices.push(index);
+  }
+  return colorIndices;
+}
+function AdjustCaptureScreen({ imageData, initialBox, onConfirm, onRetake }) {
+  const size = imageData.width;
+  const [box, setBox] = useState(initialBox);
+  const canvasRef = useRef(null);
+  const colorIndices = sampleColorsForBox(imageData, box.x0, box.y0, box.size);
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    canvas.width = size;
+    canvas.height = size;
+    const ctx = canvas.getContext("2d");
+    ctx.putImageData(imageData, 0, 0);
+    ctx.strokeStyle = "#4a5b9e";
+    ctx.lineWidth = Math.max(2, size * 0.008);
+    ctx.strokeRect(box.x0, box.y0, box.size, box.size);
+    ctx.strokeStyle = "rgba(74,91,158,0.75)";
+    ctx.lineWidth = Math.max(1.5, size * 0.005);
+    for (const f of [1 / 3, 2 / 3]) {
+      ctx.beginPath();
+      ctx.moveTo(box.x0 + box.size * f, box.y0);
+      ctx.lineTo(box.x0 + box.size * f, box.y0 + box.size);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(box.x0, box.y0 + box.size * f);
+      ctx.lineTo(box.x0 + box.size, box.y0 + box.size * f);
+      ctx.stroke();
+    }
+  }, [box, imageData]);
+  const clampBox = (b) => {
+    const s = Math.max(size * 0.2, Math.min(size, b.size));
+    const x0 = Math.max(0, Math.min(size - s, b.x0));
+    const y0 = Math.max(0, Math.min(size - s, b.y0));
+    return { x0, y0, size: s };
+  };
+  const grow = (mult) => setBox((b) => {
+    const ns = b.size * mult;
+    const cx = b.x0 + b.size / 2, cy = b.y0 + b.size / 2;
+    return clampBox({ x0: cx - ns / 2, y0: cy - ns / 2, size: ns });
+  });
+  const nudge = (dx, dy) => setBox((b) => clampBox({ x0: b.x0 + dx * b.size, y0: b.y0 + dy * b.size, size: b.size }));
+  return /* @__PURE__ */ React.createElement("div", { className: "screen scan-screen" }, /* @__PURE__ */ React.createElement("h2", { className: "scan-title" }, "בדוק שהמסגרת מכסה בדיוק את הקובייה"), /* @__PURE__ */ React.createElement("p", { className: "scan-guidance" }, "השתמש בכפתורים כדי להתאים את המסגרת הכחולה לגבולות הקובייה בתמונה, ואז אשר."), /* @__PURE__ */ React.createElement("div", { className: "adjust-canvas-wrap" }, /* @__PURE__ */ React.createElement("canvas", { ref: canvasRef, className: "adjust-canvas" })), /* @__PURE__ */ React.createElement("div", { className: "adjust-controls" }, /* @__PURE__ */ React.createElement("div", { className: "adjust-row" }, /* @__PURE__ */ React.createElement("button", { className: "icon-btn", onClick: () => grow(0.92) }, /* @__PURE__ */ React.createElement(X, { size: 16 }), " הקטן"), /* @__PURE__ */ React.createElement("button", { className: "icon-btn", onClick: () => grow(1.08) }, "+ הגדל")), /* @__PURE__ */ React.createElement("div", { className: "adjust-dpad" }, /* @__PURE__ */ React.createElement("div", null), /* @__PURE__ */ React.createElement("button", { className: "icon-btn", onClick: () => nudge(0, -0.05) }, /* @__PURE__ */ React.createElement(ChevronRight, { size: 18, style: { transform: "rotate(90deg)" } })), /* @__PURE__ */ React.createElement("div", null), /* @__PURE__ */ React.createElement("button", { className: "icon-btn", onClick: () => nudge(-0.05, 0) }, /* @__PURE__ */ React.createElement(ChevronLeft, { size: 18 })), /* @__PURE__ */ React.createElement("div", null), /* @__PURE__ */ React.createElement("button", { className: "icon-btn", onClick: () => nudge(0.05, 0) }, /* @__PURE__ */ React.createElement(ChevronRight, { size: 18 })), /* @__PURE__ */ React.createElement("div", null), /* @__PURE__ */ React.createElement("button", { className: "icon-btn", onClick: () => nudge(0, 0.05) }, /* @__PURE__ */ React.createElement(ChevronRight, { size: 18, style: { transform: "rotate(-90deg)" } })), /* @__PURE__ */ React.createElement("div", null))), /* @__PURE__ */ React.createElement("div", { className: "review-grid", style: { maxWidth: 220 } }, colorIndices.map((idx, i) => /* @__PURE__ */ React.createElement("div", { key: i, className: "review-cell", style: { background: CUBE_COLORS[idx].css, cursor: "default" } }))), /* @__PURE__ */ React.createElement("div", { className: "review-actions" }, /* @__PURE__ */ React.createElement("button", { className: "secondary-btn", onClick: onRetake }, /* @__PURE__ */ React.createElement(RefreshCw, { size: 18 }), " \u05E6\u05DC\u05DD \u05DE\u05D7\u05D3\u05E9"), /* @__PURE__ */ React.createElement("button", { className: "primary-btn", onClick: () => onConfirm(colorIndices) }, /* @__PURE__ */ React.createElement(Check, { size: 18 }), " \u05D0\u05E9\u05E8 \u05D5\u05D4\u05DE\u05E9\u05DA")));
+}
 function ScanScreen({ faceIdx, stream, rawCaptures, onCapture, onBack }) {
   const face = FACE_SEQUENCE[faceIdx];
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
   const [ready, setReady] = useState(false);
-  const [notCubeWarning, setNotCubeWarning] = useState(false);
   const [mirrored, setMirrored] = useState(false);
+  const [pendingCapture, setPendingCapture] = useState(null); // { imageData, box }
   const capturedColors = {};
   FACE_SEQUENCE.forEach((f) => {
     if (rawCaptures[f]) capturedColors[f] = rawCaptures[f].map((idx) => CUBE_COLORS[idx].css);
   });
   useEffect(() => {
     setReady(false);
-    setNotCubeWarning(false);
+    setPendingCapture(null);
     const video = videoRef.current;
     if (!video || !stream) return;
     video.srcObject = stream;
@@ -2693,18 +2751,21 @@ function ScanScreen({ faceIdx, stream, rawCaptures, onCapture, onBack }) {
     ctx.drawImage(video, sx, sy, size, size, 0, 0, size, size);
     ctx.restore();
     const imageData = ctx.getImageData(0, 0, size, size);
-    const { colorIndices, looksLikeCube, reason } = analyzeFaceCapture(imageData);
-    if (!looksLikeCube) {
-      setNotCubeWarning({ reason, colorIndices });
-      return;
-    }
-    setNotCubeWarning(false);
-    onCapture(face, colorIndices);
+    const region = detectCubeRegion(imageData);
+    setPendingCapture({ imageData, box: { x0: region.x0, y0: region.y0, size: region.size } });
   };
-  return /* @__PURE__ */ React.createElement("div", { className: "screen scan-screen" }, /* @__PURE__ */ React.createElement("div", { className: "scan-header" }, /* @__PURE__ */ React.createElement("button", { className: "icon-btn", onClick: onBack, "aria-label": "\u05D7\u05D6\u05E8\u05D4" }, /* @__PURE__ */ React.createElement(ChevronRight, { size: 22 })), /* @__PURE__ */ React.createElement("div", { className: "scan-progress" }, FACE_SEQUENCE.map((f, i) => /* @__PURE__ */ React.createElement("div", { key: f, className: `dot ${i === faceIdx ? "dot-active" : ""} ${i < faceIdx ? "dot-done" : ""}` }))), /* @__PURE__ */ React.createElement("div", { style: { width: 38 } })), /* @__PURE__ */ React.createElement("h2", { className: "scan-title" }, "\u05E1\u05E8\u05D5\u05E7 \u05E4\u05D0\u05D4 ", faceIdx + 1, " \u05DE\u05EA\u05D5\u05DA 6: ", /* @__PURE__ */ React.createElement("span", { className: "accent" }, FACE_LABEL_HE[face])), /* @__PURE__ */ React.createElement("p", { className: "scan-guidance" }, FACE_GUIDANCE_HE[face]), /* @__PURE__ */ React.createElement("div", { className: "guide-cube-frame" }, /* @__PURE__ */ React.createElement(GuideCube3D, { targetFace: face, capturedColors })), /* @__PURE__ */ React.createElement("div", { className: "camera-wrap" }, /* @__PURE__ */ React.createElement("video", { ref: videoRef, className: "camera-video", style: mirrored ? { transform: "scaleX(-1)" } : void 0, playsInline: true, muted: true }), /* @__PURE__ */ React.createElement("div", { className: "frame-outline" }), !ready && /* @__PURE__ */ React.createElement("div", { className: "camera-loading" }, "\u05E4\u05D5\u05EA\u05D7 \u05DE\u05E6\u05DC\u05DE\u05D4\u2026")), notCubeWarning && /* @__PURE__ */ React.createElement("div", { className: "not-cube-warning" }, /* @__PURE__ */ React.createElement("div", { className: "error-item", style: { marginBottom: 10 } }, /* @__PURE__ */ React.createElement("span", { className: "error-dot" }), /* @__PURE__ */ React.createElement("p", null, notCubeWarning.reason === "no-cube-found" ? "\u05DC\u05D0 \u05D6\u05D5\u05D4\u05D4 \u05E7\u05D5\u05D1\u05D9\u05D9\u05D4 \u05D1\u05EA\u05DE\u05D5\u05E0\u05D4 - \u05D5\u05D3\u05D0 \u05E9\u05D4\u05E4\u05D0\u05D4 \u05DE\u05DE\u05DC\u05D0\u05D4 \u05D0\u05EA \u05D4\u05DE\u05E1\u05D2\u05E8\u05EA \u05D5\u05E9\u05D4\u05EA\u05D0\u05D5\u05E8\u05D4 \u05D8\u05D5\u05D1\u05D4, \u05D5\u05E0\u05E1\u05D4 \u05E9\u05D5\u05D1." : "\u05D4\u05E6\u05D9\u05DC\u05D5\u05DD \u05DC\u05D0 \u05D1\u05E8\u05D5\u05E8 \u05DE\u05E1\u05E4\u05D9\u05E7 - \u05D0\u05E4\u05E9\u05E8 \u05DC\u05E0\u05E1\u05D5\u05EA \u05E9\u05D5\u05D1, \u05D0\u05D5 \u05DC\u05D4\u05DE\u05E9\u05D9\u05DA \u05E2\u05DD \u05D4\u05E6\u05D9\u05DC\u05D5\u05DD \u05D4\u05D6\u05D4 \u05D5\u05DC\u05EA\u05E7\u05DF \u05E6\u05D1\u05E2\u05D9\u05DD \u05D9\u05D3\u05E0\u05D9\u05EA \u05D0\u05D7\u05E8 \u05DB\u05DA.")), notCubeWarning.colorIndices && /* @__PURE__ */ React.createElement("button", { className: "secondary-btn full", onClick: () => {
-    onCapture(face, notCubeWarning.colorIndices);
-    setNotCubeWarning(false);
-  } }, "\u05D4\u05DE\u05E9\u05DA \u05D1\u05DB\u05DC \u05D6\u05D0\u05EA \u05E2\u05DD \u05E6\u05D9\u05DC\u05D5\u05DD \u05D6\u05D4")), /* @__PURE__ */ React.createElement("button", { className: "capture-btn", onClick: capture, disabled: !ready }, /* @__PURE__ */ React.createElement(Camera, { size: 22 }), " \u05E6\u05DC\u05DD \u05E4\u05D0\u05D4 \u05D6\u05D5"), /* @__PURE__ */ React.createElement("canvas", { ref: canvasRef, style: { display: "none" } }));
+  if (pendingCapture) {
+    return /* @__PURE__ */ React.createElement(AdjustCaptureScreen, {
+      imageData: pendingCapture.imageData,
+      initialBox: pendingCapture.box,
+      onRetake: () => setPendingCapture(null),
+      onConfirm: (colorIndices) => {
+        setPendingCapture(null);
+        onCapture(face, colorIndices);
+      }
+    });
+  }
+  return /* @__PURE__ */ React.createElement("div", { className: "screen scan-screen" }, /* @__PURE__ */ React.createElement("div", { className: "scan-header" }, /* @__PURE__ */ React.createElement("button", { className: "icon-btn", onClick: onBack, "aria-label": "\u05D7\u05D6\u05E8\u05D4" }, /* @__PURE__ */ React.createElement(ChevronRight, { size: 22 })), /* @__PURE__ */ React.createElement("div", { className: "scan-progress" }, FACE_SEQUENCE.map((f, i) => /* @__PURE__ */ React.createElement("div", { key: f, className: `dot ${i === faceIdx ? "dot-active" : ""} ${i < faceIdx ? "dot-done" : ""}` }))), /* @__PURE__ */ React.createElement("div", { style: { width: 38 } })), /* @__PURE__ */ React.createElement("h2", { className: "scan-title" }, "\u05E1\u05E8\u05D5\u05E7 \u05E4\u05D0\u05D4 ", faceIdx + 1, " \u05DE\u05EA\u05D5\u05DA 6: ", /* @__PURE__ */ React.createElement("span", { className: "accent" }, FACE_LABEL_HE[face])), /* @__PURE__ */ React.createElement("p", { className: "scan-guidance" }, FACE_GUIDANCE_HE[face]), /* @__PURE__ */ React.createElement("div", { className: "guide-cube-frame" }, /* @__PURE__ */ React.createElement(GuideCube3D, { targetFace: face, capturedColors })), /* @__PURE__ */ React.createElement("div", { className: "camera-wrap" }, /* @__PURE__ */ React.createElement("video", { ref: videoRef, className: "camera-video", style: mirrored ? { transform: "scaleX(-1)" } : void 0, playsInline: true, muted: true }), /* @__PURE__ */ React.createElement("div", { className: "frame-outline" }), !ready && /* @__PURE__ */ React.createElement("div", { className: "camera-loading" }, "\u05E4\u05D5\u05EA\u05D7 \u05DE\u05E6\u05DC\u05DE\u05D4\u2026")), /* @__PURE__ */ React.createElement("button", { className: "capture-btn", onClick: capture, disabled: !ready }, /* @__PURE__ */ React.createElement(Camera, { size: 22 }), " \u05E6\u05DC\u05DD \u05E4\u05D0\u05D4 \u05D6\u05D5"), /* @__PURE__ */ React.createElement("canvas", { ref: canvasRef, style: { display: "none" } }));
 }
 function ReviewScreen({ rawCaptures, onChangeCell, onConfirm, onRescanFace, faceOrderIdx, setFaceOrderIdx }) {
   const face = FACE_SEQUENCE[faceOrderIdx];
@@ -3339,6 +3400,17 @@ html, body { margin:0; padding:0; }
   position:absolute; inset:6%; border:3px dashed rgba(255,255,255,0.65); border-radius:18px;
   pointer-events:none;
 }
+
+.adjust-canvas-wrap {
+  width:min(100%, 40vh); aspect-ratio:1/1; margin:0 auto 16px; border-radius:20px; overflow:hidden;
+  box-shadow:0 6px 24px rgba(0,0,0,0.18); background:#111;
+}
+.adjust-canvas { width:100%; height:100%; display:block; object-fit:contain; }
+.adjust-controls { display:flex; flex-direction:column; align-items:center; gap:14px; margin-bottom:16px; }
+.adjust-row { display:flex; gap:10px; }
+.adjust-row .icon-btn { width:auto; padding:0 16px; gap:6px; display:inline-flex; align-items:center; font-size:13px; font-weight:600; color:#3a3a48; }
+.adjust-dpad { display:grid; grid-template-columns:repeat(3,40px); grid-template-rows:repeat(3,40px); gap:4px; }
+.adjust-dpad .icon-btn { width:40px; height:40px; }
 
 .capture-btn {
   background:#dce2f8; color:#24304f; width:100%; padding:16px; font-size:17px;
