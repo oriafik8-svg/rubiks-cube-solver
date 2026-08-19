@@ -2724,7 +2724,10 @@ function ScanScreen({ faceIdx, stream, rawCaptures, onCapture, onBack }) {
     video.srcObject = stream;
     const track = stream.getVideoTracks()[0];
     const settings = track && track.getSettings ? track.getSettings() : {};
-    setMirrored(settings.facingMode !== "environment");
+    // Many phones never report facingMode reliably even for the rear camera - default to NOT
+    // mirrored (matches physical reality) unless we positively know it's a front/"user" camera,
+    // since scanning a physical cube with the rear camera is the overwhelmingly common case here.
+    setMirrored(settings.facingMode === "user");
     const onLoaded = () => {
       video.play();
       setReady(true);
@@ -2751,21 +2754,22 @@ function ScanScreen({ faceIdx, stream, rawCaptures, onCapture, onBack }) {
     ctx.drawImage(video, sx, sy, size, size, 0, 0, size, size);
     ctx.restore();
     const imageData = ctx.getImageData(0, 0, size, size);
-    const region = detectCubeRegion(imageData);
-    setPendingCapture({ imageData, box: { x0: region.x0, y0: region.y0, size: region.size } });
+    // A predictable, consistently-sized starting box (matching the on-screen framing guide) beats
+    // a "smart" search that's sometimes right and sometimes badly wrong - the person can reliably
+    // learn what to expect and nudge it with the adjustment controls below.
+    const boxSize = Math.round(size * 0.85);
+    const box = { x0: Math.round((size - boxSize) / 2), y0: Math.round((size - boxSize) / 2), size: boxSize };
+    setPendingCapture({ imageData, box });
   };
-  if (pendingCapture) {
-    return /* @__PURE__ */ React.createElement(AdjustCaptureScreen, {
-      imageData: pendingCapture.imageData,
-      initialBox: pendingCapture.box,
-      onRetake: () => setPendingCapture(null),
-      onConfirm: (colorIndices) => {
-        setPendingCapture(null);
-        onCapture(face, colorIndices);
-      }
-    });
-  }
-  return /* @__PURE__ */ React.createElement("div", { className: "screen scan-screen" }, /* @__PURE__ */ React.createElement("div", { className: "scan-header" }, /* @__PURE__ */ React.createElement("button", { className: "icon-btn", onClick: onBack, "aria-label": "\u05D7\u05D6\u05E8\u05D4" }, /* @__PURE__ */ React.createElement(ChevronRight, { size: 22 })), /* @__PURE__ */ React.createElement("div", { className: "scan-progress" }, FACE_SEQUENCE.map((f, i) => /* @__PURE__ */ React.createElement("div", { key: f, className: `dot ${i === faceIdx ? "dot-active" : ""} ${i < faceIdx ? "dot-done" : ""}` }))), /* @__PURE__ */ React.createElement("div", { style: { width: 38 } })), /* @__PURE__ */ React.createElement("h2", { className: "scan-title" }, "\u05E1\u05E8\u05D5\u05E7 \u05E4\u05D0\u05D4 ", faceIdx + 1, " \u05DE\u05EA\u05D5\u05DA 6: ", /* @__PURE__ */ React.createElement("span", { className: "accent" }, FACE_LABEL_HE[face])), /* @__PURE__ */ React.createElement("p", { className: "scan-guidance" }, FACE_GUIDANCE_HE[face]), /* @__PURE__ */ React.createElement("div", { className: "guide-cube-frame" }, /* @__PURE__ */ React.createElement(GuideCube3D, { targetFace: face, capturedColors })), /* @__PURE__ */ React.createElement("div", { className: "camera-wrap" }, /* @__PURE__ */ React.createElement("video", { ref: videoRef, className: "camera-video", style: mirrored ? { transform: "scaleX(-1)" } : void 0, playsInline: true, muted: true }), /* @__PURE__ */ React.createElement("div", { className: "frame-outline" }), !ready && /* @__PURE__ */ React.createElement("div", { className: "camera-loading" }, "\u05E4\u05D5\u05EA\u05D7 \u05DE\u05E6\u05DC\u05DE\u05D4\u2026")), /* @__PURE__ */ React.createElement("button", { className: "capture-btn", onClick: capture, disabled: !ready }, /* @__PURE__ */ React.createElement(Camera, { size: 22 }), " \u05E6\u05DC\u05DD \u05E4\u05D0\u05D4 \u05D6\u05D5"), /* @__PURE__ */ React.createElement("canvas", { ref: canvasRef, style: { display: "none" } }));
+  return /* @__PURE__ */ React.createElement("div", { className: "screen scan-screen" }, /* @__PURE__ */ React.createElement("div", { className: "scan-header" }, /* @__PURE__ */ React.createElement("button", { className: "icon-btn", onClick: onBack, "aria-label": "\u05D7\u05D6\u05E8\u05D4" }, /* @__PURE__ */ React.createElement(ChevronRight, { size: 22 })), /* @__PURE__ */ React.createElement("div", { className: "scan-progress" }, FACE_SEQUENCE.map((f, i) => /* @__PURE__ */ React.createElement("div", { key: f, className: `dot ${i === faceIdx ? "dot-active" : ""} ${i < faceIdx ? "dot-done" : ""}` }))), /* @__PURE__ */ React.createElement("div", { style: { width: 38 } })), /* @__PURE__ */ React.createElement("h2", { className: "scan-title" }, "\u05E1\u05E8\u05D5\u05E7 \u05E4\u05D0\u05D4 ", faceIdx + 1, " \u05DE\u05EA\u05D5\u05DA 6: ", /* @__PURE__ */ React.createElement("span", { className: "accent" }, FACE_LABEL_HE[face])), /* @__PURE__ */ React.createElement("p", { className: "scan-guidance" }, FACE_GUIDANCE_HE[face]), /* @__PURE__ */ React.createElement("div", { className: "guide-cube-frame" }, /* @__PURE__ */ React.createElement(GuideCube3D, { targetFace: face, capturedColors })), /* @__PURE__ */ React.createElement("div", { className: "camera-wrap" }, /* @__PURE__ */ React.createElement("video", { ref: videoRef, className: "camera-video", style: mirrored ? { transform: "scaleX(-1)" } : void 0, playsInline: true, muted: true }), /* @__PURE__ */ React.createElement("div", { className: "frame-outline" }), !ready && /* @__PURE__ */ React.createElement("div", { className: "camera-loading" }, "\u05E4\u05D5\u05EA\u05D7 \u05DE\u05E6\u05DC\u05DE\u05D4\u2026")), /* @__PURE__ */ React.createElement("button", { className: "capture-btn", onClick: capture, disabled: !ready }, /* @__PURE__ */ React.createElement(Camera, { size: 22 }), " \u05E6\u05DC\u05DD \u05E4\u05D0\u05D4 \u05D6\u05D5"), /* @__PURE__ */ React.createElement("canvas", { ref: canvasRef, style: { display: "none" } }), pendingCapture && /* @__PURE__ */ React.createElement("div", { className: "adjust-overlay" }, /* @__PURE__ */ React.createElement(AdjustCaptureScreen, {
+    imageData: pendingCapture.imageData,
+    initialBox: pendingCapture.box,
+    onRetake: () => setPendingCapture(null),
+    onConfirm: (colorIndices) => {
+      setPendingCapture(null);
+      onCapture(face, colorIndices);
+    }
+  })));
 }
 function ReviewScreen({ rawCaptures, onChangeCell, onConfirm, onRescanFace, faceOrderIdx, setFaceOrderIdx }) {
   const face = FACE_SEQUENCE[faceOrderIdx];
@@ -3399,6 +3403,10 @@ html, body { margin:0; padding:0; }
 .frame-outline {
   position:absolute; inset:6%; border:3px dashed rgba(255,255,255,0.65); border-radius:18px;
   pointer-events:none;
+}
+
+.adjust-overlay {
+  position:fixed; inset:0; background:#e4e4e6; z-index:30; overflow-y:auto;
 }
 
 .adjust-canvas-wrap {
