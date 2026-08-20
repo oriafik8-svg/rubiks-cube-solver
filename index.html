@@ -2418,132 +2418,200 @@ function classifyToFixedPalette(rgb) {
 function toGrayscale(imageData) {
   const { data, width, height } = imageData;
   const gray = new Float32Array(width * height);
-  for (let i = 0, p = 0; i < data.length; i += 4, p++) {
-    gray[p] = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
-  }
+  for (let i = 0, p = 0; i < data.length; i += 4, p++)
+    gray[p] = 0.299 * data[i] + 0.587 * data[i+1] + 0.114 * data[i+2];
   return gray;
 }
-function smooth1D(arr, radius) {
-  const out = new Float32Array(arr.length);
-  for (let i = 0; i < arr.length; i++) {
-    let sum = 0, n = 0;
-    for (let k = -radius; k <= radius; k++) {
-      const j = i + k;
-      if (j >= 0 && j < arr.length) {
-        sum += arr[j];
-        n++;
-      }
+
+// Sobel edge magnitude
+function sobelEdges(gray, width, height) {
+  const edges = new Float32Array(width * height);
+  for (let y = 1; y < height-1; y++) {
+    for (let x = 1; x < width-1; x++) {
+      const g = (r,c) => gray[(y+r)*width+(x+c)];
+      const gx = -g(-1,-1)+g(-1,1) - 2*g(0,-1)+2*g(0,1) - g(1,-1)+g(1,1);
+      const gy = -g(-1,-1)-2*g(-1,0)-g(-1,1) + g(1,-1)+2*g(1,0)+g(1,1);
+      edges[y*width+x] = Math.sqrt(gx*gx + gy*gy);
     }
-    out[i] = sum / n;
   }
-  return out;
+  return edges;
 }
-function findTwoMinima(profile, loFrac, hiFrac) {
-  const n = profile.length;
-  const lo = Math.floor(n * loFrac), hi = Math.floor(n * hiFrac);
-  const band1 = [Math.floor(n * 0.22), Math.floor(n * 0.45)];
-  const band2 = [Math.floor(n * 0.55), Math.floor(n * 0.78)];
-  function minInBand([a, b]) {
-    let best = a, bestV = Infinity;
-    for (let i = a; i < b; i++) if (profile[i] < bestV) {
-      bestV = profile[i];
-      best = i;
+
+// Downsample imageData to at most maxDim on each side, return {gray,edges,scale,dw,dh}
+function prepareEdgeMap(imageData, maxDim) {
+  const { width, height, data } = imageData;
+  const scale = Math.min(1, maxDim / Math.max(width, height));
+  const dw = Math.round(width * scale), dh = Math.round(height * scale);
+  // Nearest-neighbour downsample to gray
+  const gray = new Float32Array(dw * dh);
+  for (let y = 0; y < dh; y++) for (let x = 0; x < dw; x++) {
+    const sx = Math.round(x / scale), sy = Math.round(y / scale);
+    const i = (Math.min(sy,height-1)*width + Math.min(sx,width-1)) * 4;
+    gray[y*dw+x] = 0.299*data[i] + 0.587*data[i+1] + 0.114*data[i+2];
+  }
+  const edges = sobelEdges(gray, dw, dh);
+  // Normalize edges 0-255
+  let maxE = 1;
+  for (let i = 0; i < edges.length; i++) if (edges[i] > maxE) maxE = edges[i];
+  for (let i = 0; i < edges.length; i++) edges[i] = edges[i] / maxE * 255;
+  return { gray, edges, scale, dw, dh };
+}
+
+// Project edge pixels to lines via Hough transform
+// Returns top N (rho, theta) pairs where rho is signed distance from center, theta in [0,PI)
+function houghLines(edges, dw, dh, threshold, maxLines) {
+  const thetaSteps = 180;
+  const diagLen = Math.ceil(Math.sqrt(dw*dw + dh*dh));
+  const rhoSteps = diagLen * 2;
+  const acc = new Int32Array(thetaSteps * rhoSteps);
+  const cosT = [], sinT = [];
+  for (let t = 0; t < thetaSteps; t++) {
+    const a = t * Math.PI / thetaSteps;
+    cosT.push(Math.cos(a)); sinT.push(Math.sin(a));
+  }
+  const cx = dw/2, cy = dh/2;
+  for (let y = 1; y < dh-1; y++) for (let x = 1; x < dw-1; x++) {
+    if (edges[y*dw+x] < threshold) continue;
+    for (let t = 0; t < thetaSteps; t++) {
+      const rho = Math.round((x-cx)*cosT[t] + (y-cy)*sinT[t]) + diagLen;
+      if (rho >= 0 && rho < rhoSteps) acc[t*rhoSteps+rho]++;
     }
-    return { pos: best, val: bestV };
   }
-  return [minInBand(band1), minInBand(band2)];
-}
-function scoreGridInRegion(gray, data, width, height, x0, y0, size) {
-  const margin = Math.round(size * 0.12);
-  const colProfile = new Float32Array(size);
-  const rowProfile = new Float32Array(size);
-  for (let x = 0; x < size; x++) {
-    let sum = 0, n = 0;
-    for (let y = margin; y < size - margin; y += 2) { sum += gray[(y0 + y) * width + (x0 + x)]; n++; }
-    colProfile[x] = n ? sum / n : 0;
-  }
-  for (let y = 0; y < size; y++) {
-    let sum = 0, n = 0;
-    for (let x = margin; x < size - margin; x += 2) { sum += gray[(y0 + y) * width + (x0 + x)]; n++; }
-    rowProfile[y] = n ? sum / n : 0;
-  }
-  function findMinima(profile) {
-    const n = profile.length;
-    const band1 = [Math.floor(n * 0.2), Math.floor(n * 0.47)];
-    const band2 = [Math.floor(n * 0.53), Math.floor(n * 0.8)];
-    function minIn([a, b]) { let best = a, bv = Infinity; for (let i = a; i < b; i++) if (profile[i] < bv) { bv = profile[i]; best = i; } return { pos: best, val: bv }; }
-    return [minIn(band1), minIn(band2)];
-  }
-  const avg = colProfile.reduce((a, b) => a + b, 0) / size;
-  const [c1, c2] = findMinima(colProfile);
-  const [r1, r2] = findMinima(rowProfile);
-  if (avg < 1) return { score: 0 };
-  const dScore = (avg - Math.max(c1.val, c2.val, r1.val, r2.val)) / avg;
-  const colSpacingErr = Math.abs(c1.pos / size - 1 / 3) + Math.abs(c2.pos / size - 2 / 3);
-  const rowSpacingErr = Math.abs(r1.pos / size - 1 / 3) + Math.abs(r2.pos / size - 2 / 3);
-  const spacingScore = Math.max(0, 1 - (colSpacingErr + rowSpacingErr) * 2.2);
-  const lineScore = Math.max(0, dScore) * spacingScore;
-  // Purity signal: real cube stickers are flat plastic color (low pixel-to-pixel variance within
-  // a cell); textured backgrounds (wood grain, brick, skin, fabric) vary more even within a small
-  // patch. This only ever BOOSTS an already-present grid-line signal - a flat, textureless wall
-  // has perfect "purity" too, so purity alone must never be enough to pass on its own.
-  const colB = [0, c1.pos, c2.pos, size], rowB = [0, r1.pos, r2.pos, size];
-  let totalVariance = 0, cellCount = 0;
-  for (let row = 0; row < 3; row++) for (let col = 0; col < 3; col++) {
-    const cx0 = x0 + colB[col], cx1 = x0 + colB[col + 1], cy0 = y0 + rowB[row], cy1 = y0 + rowB[row + 1];
-    const cw = cx1 - cx0, ch = cy1 - cy0;
-    if (cw < 6 || ch < 6) continue;
-    const pts = [];
-    for (let fy = 0.3; fy <= 0.71; fy += 0.2) for (let fx = 0.3; fx <= 0.71; fx += 0.2) {
-      const px = Math.round(cx0 + cw * fx), py = Math.round(cy0 + ch * fy);
-      const i = (py * width + px) * 4;
-      pts.push([data[i], data[i + 1], data[i + 2]]);
+  // Non-max suppression and collect peaks
+  const peaks = [];
+  for (let t = 0; t < thetaSteps; t++) for (let r = 0; r < rhoSteps; r++) {
+    const v = acc[t*rhoSteps+r];
+    if (v < 8) continue; // min votes
+    // Check local max in 5x5 neighbourhood
+    let isMax = true;
+    for (let dt = -2; dt <= 2 && isMax; dt++) for (let dr = -2; dr <= 2 && isMax; dr++) {
+      if (dt===0&&dr===0) continue;
+      const nt = (t+dt+thetaSteps)%thetaSteps, nr = r+dr;
+      if (nr>=0&&nr<rhoSteps && acc[nt*rhoSteps+nr] >= v) isMax = false;
     }
-    const mean = pts.reduce((a, p) => [a[0] + p[0], a[1] + p[1], a[2] + p[2]], [0, 0, 0]).map((v) => v / pts.length);
-    const variance = pts.reduce((a, p) => a + ((p[0] - mean[0]) ** 2 + (p[1] - mean[1]) ** 2 + (p[2] - mean[2]) ** 2), 0) / pts.length;
-    totalVariance += Math.sqrt(variance);
-    cellCount++;
+    if (isMax) peaks.push({ theta: t*Math.PI/thetaSteps, rho: r-diagLen, votes: v });
   }
-  const avgCellStd = cellCount ? totalVariance / cellCount : 999;
-  const purityScore = Math.max(0, 1 - avgCellStd / 45);
-  const score = lineScore * (0.55 + 0.45 * purityScore);
-  return { score, lineScore, purityScore, colBoundaries: colB, rowBoundaries: rowB };
+  peaks.sort((a,b) => b.votes - a.votes);
+  return peaks.slice(0, maxLines);
 }
-// Finds where in the photo the cube actually is (as opposed to background), by searching for the
-// physical signature of a cube face - a 3x3 grid of roughly evenly-spaced dark gaps between flat-
-// colored cells - at several candidate sizes AND positions (roughly centered, with some tolerance,
-// matching the on-screen framing guide but not requiring pixel-perfect alignment). This is far
-// more reliable than classifying by raw color, since ordinary backgrounds (skin, wood, walls) can
-// easily share a hue with one of the six cube colors, but essentially never form a clean, flat-
-// colored grid.
+
+// Find intersection of two Hough lines (theta1,rho1) and (theta2,rho2)
+// Line: x*cos(t)+y*sin(t) = rho  (relative to cx,cy)
+function lineIntersection(t1,r1,t2,r2,cx,cy) {
+  const det = Math.cos(t1)*Math.sin(t2) - Math.cos(t2)*Math.sin(t1);
+  if (Math.abs(det) < 1e-6) return null;
+  const x = (r1*Math.sin(t2) - r2*Math.sin(t1)) / det;
+  const y = (r2*Math.cos(t1) - r1*Math.cos(t2)) / det;
+  return { x: x+cx, y: y+cy };
+}
+
+// Main: detect cube face as a quadrilateral in imageData
+// Returns { confident, corners:[TL,TR,BR,BL] } in original image coords
 const CUBE_REGION_CONFIDENCE_MIN = 0.3;
 function detectCubeRegion(imageData) {
-  const { width, height, data } = imageData;
-  const gray = toGrayscale(imageData);
-  const frameSize = Math.min(width, height);
-  const cx0 = width / 2, cy0 = height / 2;
-  let best = null;
-  const offsets = [0, -0.08, 0.08];
-  for (let frac = 1; frac >= 0.42; frac -= 0.06) {
-    const size = Math.round(frameSize * frac);
-    for (const ox of offsets) for (const oy of offsets) {
-      const cx = cx0 + ox * size, cy = cy0 + oy * size;
-      const x0 = Math.round(cx - size / 2), y0 = Math.round(cy - size / 2);
-      if (x0 < 0 || y0 < 0 || x0 + size > width || y0 + size > height) continue;
-      const result = scoreGridInRegion(gray, data, width, height, x0, y0, size);
-      if (!best || result.score > best.score) best = { ...result, x0, y0, size };
+  const { width, height } = imageData;
+  const maxDim = 320; // work at smaller resolution for speed
+  const { edges, scale, dw, dh } = prepareEdgeMap(imageData, maxDim);
+
+  // Edge density threshold: adaptive
+  let edgeSum = 0;
+  for (let i = 0; i < edges.length; i++) edgeSum += edges[i];
+  const avgEdge = edgeSum / edges.length;
+  const threshold = Math.max(40, avgEdge * 2.5);
+
+  const lines = houghLines(edges, dw, dh, threshold, 80);
+  if (lines.length < 4) return _fallback(width, height);
+
+  // Separate into roughly-horizontal and roughly-vertical lines
+  const horiz = lines.filter(l => {
+    const a = l.theta * 180 / Math.PI;
+    return a < 30 || a > 150; // near horizontal
+  });
+  const vert = lines.filter(l => {
+    const a = l.theta * 180 / Math.PI;
+    return a >= 30 && a <= 150; // near vertical
+  });
+
+  if (horiz.length < 2 || vert.length < 2) return _fallback(width, height);
+
+  // Cluster lines: keep only lines that are far enough from each other
+  function clusterLines(ls, minGap) {
+    const kept = [];
+    for (const l of ls) {
+      const tooClose = kept.some(k => Math.abs(k.rho - l.rho) < minGap);
+      if (!tooClose) kept.push(l);
     }
+    return kept;
   }
-  const confident = !!best && best.score >= CUBE_REGION_CONFIDENCE_MIN;
-  if (confident) {
-    return { found: true, confident: true, x0: best.x0, y0: best.y0, size: best.size, colBoundaries: best.colBoundaries.map((v) => v + best.x0), rowBoundaries: best.rowBoundaries.map((v) => v + best.y0), score: best.score };
+  const minGap = Math.min(dw, dh) * 0.12;
+  const hLines = clusterLines(horiz, minGap);
+  const vLines = clusterLines(vert, minGap);
+
+  if (hLines.length < 2 || vLines.length < 2) return _fallback(width, height);
+
+  // Pick the 2 horizontal and 2 vertical lines that best frame the cube:
+  // the pair whose midpoint rho is nearest the image center, and span is largest
+  function bestPair(ls) {
+    let best = null, bestScore = -Infinity;
+    for (let i = 0; i < ls.length; i++) for (let j = i+1; j < ls.length; j++) {
+      const span = Math.abs(ls[i].rho - ls[j].rho);
+      const mid = (ls[i].rho + ls[j].rho) / 2;
+      const centerBias = 1 / (1 + Math.abs(mid) / (Math.min(dw,dh)*0.5));
+      const score = span * centerBias * (ls[i].votes + ls[j].votes);
+      if (score > bestScore) { bestScore = score; best = [ls[i], ls[j]]; }
+    }
+    return best;
   }
-  // Not confident (or nothing scored at all) - fall back to the on-screen framing guide's region
-  // (the ~90%-of-frame square the person was told to fit the cube into) rather than giving up.
-  // This guarantees there is always something usable to sample, with an even 3x3 split.
-  const size = Math.round(frameSize * 0.9);
-  const x0 = Math.round(cx0 - size / 2), y0 = Math.round(cy0 - size / 2);
-  return { found: true, confident: false, x0, y0, size, colBoundaries: [x0, x0 + size / 3, x0 + 2 * size / 3, x0 + size], rowBoundaries: [y0, y0 + size / 3, y0 + 2 * size / 3, y0 + size], score: best ? best.score : 0 };
+
+  const [h1, h2] = bestPair(hLines);
+  const [v1, v2] = bestPair(vLines);
+  const cx = dw/2, cy = dh/2;
+
+  // 4 corners = intersections of h1,h2 x v1,v2
+  const TL = lineIntersection(h1.theta,h1.rho, v1.theta,v1.rho, cx,cy);
+  const TR = lineIntersection(h1.theta,h1.rho, v2.theta,v2.rho, cx,cy);
+  const BL = lineIntersection(h2.theta,h2.rho, v1.theta,v1.rho, cx,cy);
+  const BR = lineIntersection(h2.theta,h2.rho, v2.theta,v2.rho, cx,cy);
+
+  if (!TL||!TR||!BL||!BR) return _fallback(width, height);
+
+  // Scale back to original image coords
+  const s = 1/scale;
+  const corners = [
+    { x: TL.x*s, y: TL.y*s },
+    { x: TR.x*s, y: TR.y*s },
+    { x: BR.x*s, y: BR.y*s },
+    { x: BL.x*s, y: BL.y*s },
+  ];
+
+  // Sanity check: corners should be within image bounds and form a reasonable quad
+  const inBounds = corners.every(c => c.x >= -width*0.2 && c.x <= width*1.2 && c.y >= -height*0.2 && c.y <= height*1.2);
+  if (!inBounds) return _fallback(width, height);
+
+  // Check quad area is reasonable (10% to 99% of image)
+  const area = Math.abs((TR.x-TL.x)*(BL.y-TL.y) - (BL.x-TL.x)*(TR.y-TL.y)) * s * s;
+  const imgArea = width * height;
+  if (area < imgArea * 0.05 || area > imgArea * 0.99) return _fallback(width, height);
+
+  // Order corners: TL, TR, BR, BL
+  const sorted = corners.slice().sort((a,b) => a.y - b.y);
+  const topTwo = sorted.slice(0,2).sort((a,b) => a.x - b.x);
+  const botTwo = sorted.slice(2,4).sort((a,b) => a.x - b.x);
+  const ordered = [topTwo[0], topTwo[1], botTwo[1], botTwo[0]]; // TL,TR,BR,BL
+
+  return { found: true, confident: true, corners: ordered,
+    // also return legacy x0/y0/size for fallback box use
+    x0: Math.min(...ordered.map(c=>c.x)), y0: Math.min(...ordered.map(c=>c.y)),
+    size: Math.max(...ordered.map(c=>c.x)) - Math.min(...ordered.map(c=>c.x)) };
+}
+
+function _fallback(width, height) {
+  const size = Math.round(Math.min(width,height) * 0.75);
+  const x0 = Math.round((width-size)/2), y0 = Math.round((height-size)/2);
+  const corners = [
+    {x:x0,y:y0},{x:x0+size,y:y0},{x:x0+size,y:y0+size},{x:x0,y:y0+size}
+  ];
+  return { found: false, confident: false, corners, x0, y0, size };
 }
 function sampleAverageColor(imageData, cx, cy, radius) {
   const { data, width, height } = imageData;
@@ -2697,21 +2765,10 @@ function sampleColorsFromQuad(imageData, corners) {
   return colorIndices;
 }
 
-// Convert box {x0,y0,size} to 4 corners TL,TR,BR,BL
-function boxToCorners(box) {
-  const { x0, y0, size } = box;
-  return [
-    { x: x0, y: y0 },
-    { x: x0+size, y: y0 },
-    { x: x0+size, y: y0+size },
-    { x: x0, y: y0+size }
-  ];
-}
-
-function AdjustCaptureScreen({ imageData, initialBox, autoDetected, onConfirm, onRetake }) {
+function AdjustCaptureScreen({ imageData, corners: initialCorners, autoDetected, onConfirm, onRetake }) {
   const size = imageData.width;
   // 4 corners: TL, TR, BR, BL — start from box
-  const [corners, setCorners] = useState(() => boxToCorners(initialBox));
+  const [corners, setCorners] = useState(initialCorners);
   const canvasRef = useRef(null);
   const dragRef = useRef(null); // { cornerIdx, startX, startY, startCorner }
   const colorIndices = sampleColorsFromQuad(imageData, corners);
@@ -2935,17 +2992,11 @@ function ScanScreen({ faceIdx, stream, rawCaptures, onCapture, onBack }) {
     const imageData = ctx.getImageData(0, 0, size, size);
     // Try to auto-detect the cube face in the image
     const detected = detectCubeRegion(imageData);
-    const box = {
-      x0: detected.x0,
-      y0: detected.y0,
-      size: detected.size,
-      rotation: 0,
-    };
-    setPendingCapture({ imageData, box, autoDetected: detected.confident });
+    setPendingCapture({ imageData, corners: detected.corners, autoDetected: detected.confident });
   };
   return /* @__PURE__ */ React.createElement("div", { className: "screen scan-screen" }, /* @__PURE__ */ React.createElement("div", { className: "scan-header" }, /* @__PURE__ */ React.createElement("button", { className: "icon-btn", onClick: onBack, "aria-label": "\u05D7\u05D6\u05E8\u05D4" }, /* @__PURE__ */ React.createElement(ChevronRight, { size: 22 })), /* @__PURE__ */ React.createElement("div", { className: "scan-progress" }, FACE_SEQUENCE.map((f, i) => /* @__PURE__ */ React.createElement("div", { key: f, className: `dot ${i === faceIdx ? "dot-active" : ""} ${i < faceIdx ? "dot-done" : ""}` }))), /* @__PURE__ */ React.createElement("div", { style: { width: 38 } })), /* @__PURE__ */ React.createElement("h2", { className: "scan-title" }, "\u05E1\u05E8\u05D5\u05E7 \u05E4\u05D0\u05D4 ", faceIdx + 1, " \u05DE\u05EA\u05D5\u05DA 6: ", /* @__PURE__ */ React.createElement("span", { className: "accent" }, FACE_LABEL_HE[face])), /* @__PURE__ */ React.createElement("p", { className: "scan-guidance" }, FACE_GUIDANCE_HE[face]), /* @__PURE__ */ React.createElement("div", { className: "guide-cube-frame" }, /* @__PURE__ */ React.createElement(GuideCube3D, { targetFace: face, capturedColors })), /* @__PURE__ */ React.createElement("div", { className: "camera-wrap" }, /* @__PURE__ */ React.createElement("video", { ref: videoRef, className: "camera-video", style: mirrored ? { transform: "scaleX(-1)" } : void 0, playsInline: true, muted: true }), /* @__PURE__ */ React.createElement("div", { className: "frame-outline" }), !ready && /* @__PURE__ */ React.createElement("div", { className: "camera-loading" }, "\u05E4\u05D5\u05EA\u05D7 \u05DE\u05E6\u05DC\u05DE\u05D4\u2026")), /* @__PURE__ */ React.createElement("button", { className: "capture-btn", onClick: capture, disabled: !ready }, /* @__PURE__ */ React.createElement(Camera, { size: 22 }), " \u05E6\u05DC\u05DD \u05E4\u05D0\u05D4 \u05D6\u05D5"), /* @__PURE__ */ React.createElement("canvas", { ref: canvasRef, style: { display: "none" } }), pendingCapture && /* @__PURE__ */ React.createElement("div", { className: "adjust-overlay" }, /* @__PURE__ */ React.createElement(AdjustCaptureScreen, {
     imageData: pendingCapture.imageData,
-    initialBox: pendingCapture.box,
+    corners: pendingCapture.corners,
     autoDetected: pendingCapture.autoDetected,
     onRetake: () => setPendingCapture(null),
     onConfirm: (colorIndices) => {
