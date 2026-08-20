@@ -2768,7 +2768,12 @@ function sampleColorsFromQuad(imageData, corners) {
 function AdjustCaptureScreen({ imageData, corners: initialCorners, autoDetected, onConfirm, onRetake }) {
   const size = imageData.width;
   // 4 corners: TL, TR, BR, BL — start from box
-  const [corners, setCorners] = useState(initialCorners);
+  const defaultCorners = (() => {
+    if (Array.isArray(initialCorners) && initialCorners.length === 4) return initialCorners;
+    const s = size; const pad = Math.round(s * 0.1);
+    return [{x:pad,y:pad},{x:s-pad,y:pad},{x:s-pad,y:s-pad},{x:pad,y:s-pad}];
+  })();
+  const [corners, setCorners] = useState(defaultCorners);
   const canvasRef = useRef(null);
   const dragRef = useRef(null); // { cornerIdx, startX, startY, startCorner }
   const colorIndices = sampleColorsFromQuad(imageData, corners);
@@ -2840,11 +2845,12 @@ function AdjustCaptureScreen({ imageData, corners: initialCorners, autoDetected,
     }
   };
   const onPointerMove = (e) => {
-    if (!dragRef.current) return;
+    const drag = dragRef.current;
+    if (!drag) return;
     e.preventDefault();
     const pos = getCanvasPos(e);
     const clamped = { x: Math.max(0,Math.min(size,pos.x)), y: Math.max(0,Math.min(size,pos.y)) };
-    setCorners(prev => prev.map((c,i) => i === dragRef.current.cornerIdx ? clamped : c));
+    setCorners(prev => prev.map((c,i) => i === drag.cornerIdx ? clamped : c));
   };
   const onPointerUp = () => { dragRef.current = null; };
 
