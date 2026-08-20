@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Debug זיהוי קוביה</title>
+<style>
+  body { font-family: sans-serif; background:#111; color:#eee; padding:12px; }
+  h2 { margin:0 0 10px; }
+  .row { display:flex; gap:10px; flex-wrap:wrap; margin-bottom:10px; }
+  canvas { border:2px solid #444; max-width:100%; }
+  label { display:block; font-size:13px; color:#aaa; margin-bottom:4px; }
+  input[type=file] { color:#eee; }
+  #log { background:#222; padding:10px; border-radius:8px; font-size:12px; font-family:monospace; white-space:pre-wrap; max-height:200px; overflow-y:auto; }
+  .tag { display:inline-block; padding:2px 8px; border-radius:12px; font-size:12px; font-weight:bold; }
+  .ok { background:#27ae60; }
+  .fail { background:#c0392b; }
+</style>
+</head>
+<body>
+<h2>🔍 Debug זיהוי קוביה</h2>
+<input type="file" accept="image/*" id="inp">
+<br><br>
+<div class="row">
+  <div><label>תמונה מקורית + תוצאה</label><canvas id="cOrig" width="300" height="300"></canvas></div>
+  <div><label>Saturation map</label><canvas id="cSat" width="300" height="300"></canvas></div>
+  <div><label>Blurred sat</label><canvas id="cBlur" width="300" height="300"></canvas></div>
+  <div><label>Cell grid + blob</label><canvas id="cCell" width="300" height="300"></canvas></div>
+</div>
+<div id="result"></div>
+<div id="log"></div>
+
+<script>
+const log = (...args) => {
+  document.getElementById('log').textContent += args.join(' ') + '\n';
+};
+
+function rgbSaturation(r, g, b) {
+  const max = Math.max(r,g,b), min = Math.min(r,g,b);
+  return max < 1 ? 0 : (max - min) / max;
+}
+
+function buildSatMap(imageData, maxDim) {
+  const { data, width, height } = imageData;
+  const scale = Math.min(1, maxDim / Math.max(width, height));
+  const dw = Math.round(width * scale), dh = Math.round(height * scale);
+  const sat = new Float32Array(dw * dh);
+  for (let y = 0; y < dh; y++) for (let x = 0; x < dw; x++) {
+    const sx = Math.min(width-1, Math.round(x/scale));
+    const sy = Math.min(height-1, Math.round(y/scale));
+    const i = (sy * width + sx) * 4;
+    sat[y*dw+x] = rgbSaturation(data[i]/255, data[i+1]/255, data[i+2]/255) * 255;
+  }
+  return { sat, dw, dh, scale };
+}
+
+function boxBlur(arr, w, h, r) {
+  const tmp = new Float32Array(arr.length);
+  for (let y = 0; y < h; y++) {
+    let sum = 0, cnt = 0;
+    for (let x = 0; x < r; x++) { sum += arr[y*w+x]; cnt++; }
+    for (let x = 0; x < w; x++) {
+      if (x+r < w) { sum += arr[y*w+x+r]; cnt++; }
+      if (x-r-1 >= 0) { sum -= arr[y*w+x-r-1]; cnt--; }
+      tmp[y*w+x] = sum/cnt;
+    }
+  }
+  for (let x = 0; x < w; x++) {
+    let sum = 0, cnt = 0;
+    for (let y = 0; y < r; y++) { sum += tmp[y*w+x]; cnt++; }
+    for (let y = 0; y < h; y++) {
+      if (y+r < h) { sum += tmp[(y+r)*w+x]; cnt++; }
+      if (y-r-1 >= 0) { sum -= tmp[(y-r-1)*w+x]; cnt--; }
+      arr[y*w+x] = sum/cnt;
+    }
+  }
+}
+
+function findSatBlob(sat, dw, dh) {
+  const cellSize = Math.max(4, Math.round(Math.min(dw,dh)/30));
+  const cw = Math.ceil(dw/cellSize), ch = Math.ceil(dh/cellSize);
+  const cellSat = new Float32Array(cw*ch);
+  for (let cy = 0; cy < ch; cy++) for (let cx = 0; cx < cw; cx++) {
+    let s = 0, n = 0;
+    for (let dy = 0; dy < cellSize && cy*cellSize+dy < dh; dy++)
+      for (let dx = 0; dx < cellSize && cx*cellSize+dx < dw; dx++) {
+        s += sat[(cy*cellSize+dy)*dw + (cx*cellSize+dx)]; n++;
+      }
+    cellSat[cy*cw+cx] = n ? s/n : 0;
+  }
+
+  const blockR = Math.max(1, Math.round(Math.min(cw,ch)*0.15));
+  let bestScore = -1, bestCx = 0, bestCy = 0;
+  for (let cy = blockR; cy < ch-blockR; cy++) for (let cx = blockR; cx < cw-blockR; cx++) {
+    let s = 0;
+    for (let dy = -blockR; dy <= blockR; dy++)
+      for (let dx = -blockR; dx <= blockR; dx++)
+        s += cellSat[(cy+dy)*cw+(cx+dx)];
+    if (s > bestScore) { bestScore = s; bestCx = cx; bestCy = cy; }
+  }
+
+  log(`Best cell: (${bestCx},${bestCy}), score=${bestScore.toFixed(1)}, blockR=${blockR}`);
+  log(`cellSize=${cellSize}, grid=${cw}x${ch}`);
+
+  const centerVal = cellSat[bestCy*cw+bestCx];
+  const blobThresh = centerVal * 0.45;
+  log(`centerVal=${centerVal.toFixed(1)}, blobThresh=${blobThresh.toFixed(1)}`);
+
+  let x0=bestCx, x1=bestCx, y0=bestCy, y1=bestCy;
+  const visited = new Uint8Array(cw*ch);
+  const queue = [[bestCx, bestCy]];
+  visited[bestCy*cw+bestCx] = 1;
+  while (queue.length) {
+    const [qx, qy] = queue.shift();
+    for (const [nx,ny] of [[qx-1,qy],[qx+1,qy],[qx,qy-1],[qx,qy+1]]) {
+      if (nx<0||ny<0||nx>=cw||ny>=ch||visited[ny*cw+nx]) continue;
+      if (cellSat[ny*cw+nx] >= blobThresh) {
+        visited[ny*cw+nx] = 1; queue.push([nx,ny]);
+        if(nx<x0)x0=nx; if(nx>x1)x1=nx; if(ny<y0)y0=ny; if(ny>y1)y1=ny;
+      }
+    }
+  }
+
+  return { blob:{x0,y0,x1,y1}, cellSat, cw, ch, cellSize, bestCx, bestCy, visited };
+}
+
+function drawFloatMap(canvas, arr, w, h, label) {
+  canvas.width = w; canvas.height = h;
+  const ctx = canvas.getContext('2d');
+  const id = ctx.createImageData(w, h);
+  let max = 0; for (let i=0;i<arr.length;i++) if(arr[i]>max) max=arr[i];
+  for (let i=0;i<arr.length;i++) {
+    const v = max>0 ? Math.round(arr[i]/max*255) : 0;
+    id.data[i*4]=v; id.data[i*4+1]=v; id.data[i*4+2]=v; id.data[i*4+3]=255;
+  }
+  ctx.putImageData(id, 0, 0);
+}
+
+document.getElementById('inp').onchange = function(e) {
+  document.getElementById('log').textContent = '';
+  const file = e.target.files[0];
+  if (!file) return;
+  const img = new Image();
+  img.onload = () => {
+    const maxDim = 256;
+    // Draw original scaled
+    const origC = document.getElementById('cOrig');
+    origC.width = Math.round(img.width * maxDim / Math.max(img.width,img.height));
+    origC.height = Math.round(img.height * maxDim / Math.max(img.width,img.height));
+    const octx = origC.getContext('2d');
+    octx.drawImage(img, 0, 0, origC.width, origC.height);
+    const imageData = octx.getImageData(0, 0, origC.width, origC.height);
+
+    // Build sat map
+    const { sat, dw, dh, scale } = buildSatMap(imageData, maxDim);
+    log(`Image: ${imageData.width}x${imageData.height}, sat map: ${dw}x${dh}, scale=${scale.toFixed(3)}`);
+
+    // Sat stats
+    let satSum=0, satMax=0;
+    for(let i=0;i<sat.length;i++){satSum+=sat[i];if(sat[i]>satMax)satMax=sat[i];}
+    log(`Sat avg=${(satSum/sat.length).toFixed(1)}, max=${satMax.toFixed(1)}`);
+
+    drawFloatMap(document.getElementById('cSat'), sat, dw, dh);
+
+    // Blur
+    const blurred = new Float32Array(sat);
+    const blurR = Math.max(2, Math.round(Math.min(dw,dh)/40));
+    log(`Blur radius: ${blurR}`);
+    boxBlur(blurred, dw, dh, blurR);
+    drawFloatMap(document.getElementById('cBlur'), blurred, dw, dh);
+
+    // Find blob
+    const { blob, cellSat, cw, ch, cellSize, bestCx, bestCy, visited } = findSatBlob(blurred, dw, dh);
+    log(`Blob: x0=${blob.x0} y0=${blob.y0} x1=${blob.x1} y1=${blob.y1}`);
+
+    const bw = blob.x1-blob.x0, bh = blob.y1-blob.y0;
+    const blobFrac = (bw*bh)/(cw*ch);
+    log(`Blob cells: ${bw}x${bh}, frac of grid=${blobFrac.toFixed(2)}`);
+
+    // Draw cell grid canvas
+    const cellC = document.getElementById('cCell');
+    cellC.width = dw; cellC.height = dh;
+    const cctx = cellC.getContext('2d');
+    // draw sat map as base
+    drawFloatMap(cellC, blurred, dw, dh);
+    // overlay cells
+    cctx.globalAlpha = 0.5;
+    let maxCellSat = 0; for(let i=0;i<cellSat.length;i++) if(cellSat[i]>maxCellSat) maxCellSat=cellSat[i];
+    for(let cy=0;cy<ch;cy++) for(let cx=0;cx<cw;cx++) {
+      const v = cellSat[cy*cw+cx]/maxCellSat;
+      cctx.fillStyle = `hsl(${120*v},100%,${20+40*v}%)`;
+      cctx.fillRect(cx*cellSize, cy*cellSize, cellSize-1, cellSize-1);
+    }
+    cctx.globalAlpha = 1;
+    // mark best cell
+    cctx.strokeStyle='#ff0'; cctx.lineWidth=2;
+    cctx.strokeRect(bestCx*cellSize, bestCy*cellSize, cellSize, cellSize);
+    // mark blob bounding box
+    cctx.strokeStyle='#f00'; cctx.lineWidth=2;
+    cctx.strokeRect(blob.x0*cellSize, blob.y0*cellSize, (blob.x1-blob.x0+1)*cellSize, (blob.y1-blob.y0+1)*cellSize);
+
+    // Draw result on original
+    const side = Math.max(bw, bh) * cellSize;
+    const bcx = ((blob.x0+blob.x1)/2+0.5) * cellSize;
+    const bcy = ((blob.y0+blob.y1)/2+0.5) * cellSize;
+    log(`Result center: (${bcx.toFixed(0)},${bcy.toFixed(0)}), side=${side.toFixed(0)}`);
+
+    const px0 = Math.max(0, bcx - side/2);
+    const py0 = Math.max(0, bcy - side/2);
+    const psize = Math.min(dw-px0, dh-py0, side);
+
+    octx.strokeStyle='#0f0'; octx.lineWidth=3;
+    octx.strokeRect(px0, py0, psize, psize);
+    // draw 3x3 grid
+    octx.strokeStyle='rgba(0,255,0,0.5)'; octx.lineWidth=1;
+    for(let f of [1/3,2/3]) {
+      octx.beginPath(); octx.moveTo(px0+psize*f,py0); octx.lineTo(px0+psize*f,py0+psize); octx.stroke();
+      octx.beginPath(); octx.moveTo(px0,py0+psize*f); octx.lineTo(px0+psize,py0+psize*f); octx.stroke();
+    }
+
+    const pixBlobFrac = (psize*psize)/(imageData.width*imageData.height);
+    const confident = pixBlobFrac > 0.04 && pixBlobFrac < 0.96;
+    document.getElementById('result').innerHTML =
+      `<span class="tag ${confident?'ok':'fail'}">${confident?'✓ זוהה':'✗ לא זוהה'}</span> ` +
+      `שטח: ${(pixBlobFrac*100).toFixed(1)}% מהתמונה`;
+  };
+  img.src = URL.createObjectURL(file);
+};
+</script>
+</body>
+</html>
